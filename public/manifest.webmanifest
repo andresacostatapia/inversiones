@@ -1,0 +1,11 @@
+{
+  "name": "Inversiones",
+  "short_name": "Inversiones",
+  "lang": "es-CL",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#0e1217",
+  "theme_color": "#0f5b78",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
