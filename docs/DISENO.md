@@ -186,8 +186,9 @@ Simulado o pendiente:
 - **Biometría:** implementada pero **sin probar en un teléfono real** (el navegador de desarrollo no tiene sensor).
 - **Importación:** reconoce columnas por nombre genérico; faltan los perfiles de XTB, Zesty y Racional.
 - **Dólar histórico:** las filas importadas usan el dólar de hoy, no el de la fecha de la operación.
-- **Publicación:** la app corre en `localhost`. Para usarla en el celular hay que publicarla en un sitio con HTTPS
-  (el cifrado y el modo sin conexión lo exigen).
+- **Publicación:** GitHub Pages, desde `.github/workflows/publicar.yml`: cada cambio subido a `main` se compila y publica solo.
+  Falta confirmar en un teléfono real que la app abre, se instala y funciona sin conexión.
+- **Ícono:** solo hay un SVG. iOS necesita además un PNG (`apple-touch-icon`) para mostrar el ícono en la pantalla de inicio.
 
 ## 6. Fases siguientes
 
