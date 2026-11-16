@@ -5,6 +5,18 @@
 	"compatibility_date": "2026-11-01",
 	"vars": {
 		// Sitios desde los que la app puede consultar (separados por coma, sin espacios).
-		"ALLOWED_ORIGINS": "https://andresacostatapia.github.io,http://localhost:5173,http://localhost:4173"
+		"ALLOWED_ORIGINS": "https://andresacostatapia.github.io,http://localhost:5173,http://localhost:4173",
+		// Clave PÚBLICA de firma de las notificaciones (la misma está en src/config.ts de la app).
+		// La privada es un secreto: `wrangler secret put VAPID_PRIVATE_JWK`; en local, worker/.dev.vars.
+		"VAPID_PUBLIC": "BJTokTnisZsNt6_QISFhxss_T06GuPEOEal_z-8SPPoHRj7c0TVPCtbFzkzRuuFa7GqpUoISzudwyaHbYnr2nIY",
+		// Contacto que exigen los servicios de push para identificar al remitente.
+		"VAPID_SUBJECT": "https://andresacostatapia.github.io/inversiones/"
+	},
+	// Reglas de alerta, suscripción push y alertas cumplidas.
+	"kv_namespaces": [{ "binding": "DB", "id": "c27ea1ec19174b8abb427a9056012d58" }],
+	"triggers": {
+		// Cada 5 minutos entre las 12:00 y las 21:59 UTC: cubre la Bolsa de Santiago y la de
+		// Nueva York en horario de verano e invierno. Los fines de semana se descartan en el código.
+		"crons": ["*/5 12-21 * * *"]
 	}
 }

@@ -200,7 +200,52 @@ Código en `worker/src/index.js`, `src/lib/quotes.ts` y `src/config.ts`.
 
 Para publicar el servidor: `npx wrangler login` y luego `npm run deploy`, ambos dentro de `worker/`.
 
-## 6. Estado actual
+## 6. Alertas con la app cerrada (fase 3)
+
+Código en `worker/src/` (`index.js`, `rules.js`, `market.js`, `push.js`), `src/lib/alerts.ts` y `public/sw.js`.
+
+**Cómo funciona**
+1. La app envía al servidor las reglas activas (símbolo y condición) y la suscripción push del celular, cada vez que cambian.
+2. Una tarea programada revisa las reglas cada 5 minutos entre las 12:00 y las 21:59 UTC, de lunes a viernes
+   (cubre la Bolsa de Santiago y la de Nueva York todo el año).
+3. Si una regla se cumple, el servidor guarda la alerta cumplida y envía una notificación push.
+4. Al abrir o actualizar, la app trae las alertas cumplidas y las muestra.
+
+**Qué evalúa**
+| Regla | Se cumple cuando | Datos |
+|---|---|---|
+| Precio sobre / bajo | el precio está sobre o bajo el nivel | último precio |
+| Variación en un día | sube o baja al menos X % respecto del cierre anterior | último precio y cierre anterior |
+| Cruce de medias | el día en que la media corta cruza a la larga, al alza o a la baja (larga de 200 días como máximo) | cierres diarios de un año |
+| Indicador | el día en que el RSI (14) o el MACD (12/26) cruza el valor indicado | cierres diarios de un año |
+
+Cada regla avisa a lo más **una vez por día**. Una regla de precio vuelve a avisar al día siguiente si sigue cumpliéndose.
+
+**Qué reglas vigila el servidor:** las de activos con precio automático y las del dólar. Las de activos con precio manual
+(y todas, con datos de ejemplo) solo las revisa la app al actualizar, y solo las de precio y variación diaria.
+
+**Notificaciones push**
+- Estándar Web Push, sin librerías. El contenido viaja cifrado de extremo a extremo (RFC 8291): Google o Apple
+  transportan el aviso pero no pueden leerlo. El cifrado se comprobó contra una implementación independiente (`http_ece`).
+- El servidor firma cada envío (VAPID). La clave privada es un secreto de Cloudflare (`VAPID_PRIVATE_JWK`); en local
+  está en `worker/.dev.vars`, fuera de git. **Si se pierde, hay que generar otra y volver a activar las notificaciones.**
+- El aviso muestra activo, regla y valor, y puede verse en la pantalla de bloqueo del celular.
+- En iPhone solo funciona con la app instalada en la pantalla de inicio.
+
+**Vinculación:** la app genera una clave aleatoria, guardada cifrada con los demás datos (y por tanto incluida en el
+respaldo). El servidor acepta la primera clave que recibe y desde entonces solo esa. «Borrar todo» en la app también
+borra lo guardado en el servidor y lo desvincula. Límite: quien se adelantara a vincular antes que la app real podría
+ocupar el lugar; el efecto sería que la app avise «vinculado a otra instalación», y se resuelve borrando la clave
+`device` del almacenamiento (`npx wrangler kv key delete device --binding DB --remote`).
+
+**Qué guarda el servidor:** reglas (símbolo y condición), suscripción push, las últimas 100 alertas cumplidas y la huella
+de la clave. Nada más.
+
+**Límites del plan gratuito de Cloudflare** que condicionan el diseño: hasta 40 símbolos y 100 reglas, y un presupuesto
+de cómputo pequeño por revisión. Con muchas reglas de medias o indicadores (cada una descarga un año de historia)
+la revisión podría cortarse; no se ha medido.
+
+## 7. Estado actual
 
 Funciona: todas las pantallas, cálculo de portafolio y ganancias, formulario rápido, importación CSV con detección de
 duplicados, exportación CSV, alertas (crear, silenciar, editar, eliminar), cambio de moneda y tema, **datos cifrados en
@@ -211,17 +256,18 @@ mano, uso sin conexión** (versión compilada) **y cotizaciones automáticas** c
 Simulado o pendiente:
 - **Cotizaciones:** el índice IPSA no tiene símbolo en Yahoo, así que no se actualiza solo. Con datos de ejemplo,
   «Actualizar» sigue moviendo los precios al azar. Falta ver la actualización periódica funcionando en horario de mercado.
-- **Alertas:** solo precio y variación diaria se evalúan, y solo con la app abierta (al actualizar precios). Sin envío real por push, correo ni Telegram.
+- **Alertas:** el servidor las vigila y la app muestra las cumplidas (probado). **La entrega de la notificación push a un
+  celular real no se ha probado**: el navegador de desarrollo no permite notificaciones. Correo y Telegram no están hechos.
 - **Biometría:** implementada pero **sin probar en un teléfono real** (el navegador de desarrollo no tiene sensor).
 - **Importación:** reconoce columnas por nombre genérico; faltan los perfiles de XTB, Zesty y Racional.
 - **Publicación:** GitHub Pages, desde `.github/workflows/publicar.yml`: cada cambio subido a `main` se compila y publica solo.
   Falta confirmar en un teléfono real que la app abre, se instala y funciona sin conexión.
-- **Ícono:** solo hay un SVG. iOS necesita además un PNG (`apple-touch-icon`) para mostrar el ícono en la pantalla de inicio.
 
-## 7. Fases siguientes
+## 8. Fases siguientes
 
 1. ~~Datos reales: IndexedDB cifrada, PIN/biometría, respaldo cifrado, agregar activos, service worker.~~ Hecho.
-2. Publicar el servidor de cotizaciones. Probar la app y la biometría en el celular.
-3. Alertas en el servidor con push y Telegram; después medias móviles e indicadores.
+2. ~~Cotizaciones y dólar automáticos.~~ Hecho.
+3. ~~Alertas en el servidor con notificación push, medias móviles e indicadores.~~ Hecho; falta probar en el celular.
+   Pendiente: correo y Telegram.
 4. Perfiles de importación por broker.
 5. Opcional: captura de pantalla con reconocimiento de texto para pre-llenar el formulario.

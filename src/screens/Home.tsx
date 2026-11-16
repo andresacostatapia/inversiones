@@ -1,6 +1,7 @@
 import { Delta, go } from '../components'
 import { fmtDate, fmtMoney, fmtPct, fmtPrice } from '../lib/format'
 import { useApp } from '../store'
+import { eventValue } from './Alerts'
 
 export function Home() {
   const { tot, cur, other, views, state, asset, fx } = useApp()
@@ -46,14 +47,13 @@ export function Home() {
         {state.events.length === 0 && <p className="muted">Ninguna alerta se ha cumplido todavía.</p>}
         {state.events.slice(0, 3).map((e) => {
           const a = asset(e.assetId)
-          const isPct = e.message.startsWith('Variación')
           return (
             <button key={e.id} className="row" onClick={() => go('alertas')}>
               <div>
                 <b>{e.assetId}</b> · {e.message}
                 <div className="muted">{fmtDate(e.triggeredAt, true)}</div>
               </div>
-              <div className="num right">{isPct ? fmtPct(e.value) : fmtPrice(e.value, a?.currency ?? 'USD')}</div>
+              <div className="num right">{eventValue(e, a)}</div>
             </button>
           )
         })}

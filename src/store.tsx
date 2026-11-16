@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { brokers, seedAlerts, seedAssets, seedEvents, seedQuotes, seedSettings, seedTrades } from './data/seed'
+import { buildSyncPayload, currentPush, fetchEvents, newDeviceKey, putAlerts, ServerError, serverWatches } from './lib/alerts'
 import { fingerprint } from './lib/csv'
 import { describeRule } from './lib/format'
 import { buildLedger, totals, valuePositions, type Ledger, type PositionView, type Totals } from './lib/portfolio'
@@ -8,7 +9,7 @@ import { saveData, type Session } from './lib/vault'
 import type { AlertEvent, AlertRule, Asset, Currency, ImportBatch, NewTrade, Quote, Settings, Trade } from './types'
 
 export interface State {
-  demo: boolean // true = datos de ejemplo (precios simulados)
+  demo: boolean // true = datos de ejemplo (precios simulados, sin servidor)
   assets: Asset[]
   trades: Trade[]
   batches: ImportBatch[]
@@ -16,6 +17,8 @@ export interface State {
   events: AlertEvent[]
   quotes: Record<string, Quote>
   settings: Settings
+  deviceKey: string // identifica a esta instalación ante el servidor de alertas
+  pushSub: PushSubscriptionJSON | null // suscripción push de este dispositivo
 }
 
 export const demoState = (): State => ({
@@ -27,6 +30,8 @@ export const demoState = (): State => ({
   events: seedEvents,
   quotes: seedQuotes,
   settings: seedSettings,
+  deviceKey: newDeviceKey(),
+  pushSub: null,
 })
 
 /** Portafolio vacío: solo el dólar, que se necesita para convertir monedas. */
@@ -39,6 +44,8 @@ export const emptyState = (): State => ({
   events: [],
   quotes: { USDCLP: { assetId: 'USDCLP', price: 950, prevClose: 950, asOf: new Date().toISOString() } },
   settings: seedSettings,
+  deviceKey: newDeviceKey(),
+  pushSub: null,
 })
 
 /** Completa con valores por defecto lo que falte en datos guardados por versiones anteriores. */
@@ -49,13 +56,19 @@ export function hydrate(data: unknown): State {
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 
-/** Revisa las reglas de precio y de variación diaria; devuelve la lista de alertas cumplidas actualizada. */
-function evaluateAlerts(s: State, quotes: Record<string, Quote>, now: string): AlertEvent[] {
+/** Estado de la sincronización de reglas con el servidor de alertas. */
+export type AlertSync = 'off' | 'pendiente' | 'ok' | 'error' | 'ajeno'
+
+/**
+ * Revisión de alertas dentro de la app (precio y variación diaria). Solo cubre las reglas que
+ * el servidor NO vigila: datos de ejemplo, activos con precio manual o app sin servidor.
+ */
+function evaluateLocal(s: State, quotes: Record<string, Quote>, now: string): AlertEvent[] {
   const events = [...s.events]
   for (const r of s.alerts) {
     const q = quotes[r.assetId]
     const a = s.assets.find((x) => x.id === r.assetId)
-    if (r.muted || !q || !a) continue
+    if (r.muted || !q || !a || (!s.demo && serverWatches(a))) continue
     const dayPct = (q.price / q.prevClose - 1) * 100
     const hit =
       (r.kind === 'precio_sobre' && q.price > (r.level ?? Infinity)) ||
@@ -74,6 +87,14 @@ function evaluateAlerts(s: State, quotes: Record<string, Quote>, now: string): A
       })
   }
   return events
+}
+
+/** Suma las alertas cumplidas que informa el servidor a las que ya se conocen. */
+function mergeEvents(known: AlertEvent[], incoming: AlertEvent[]): AlertEvent[] {
+  const ids = new Set(known.map((e) => e.id))
+  const added = incoming.filter((e) => e && typeof e.id === 'string' && !ids.has(e.id))
+  if (!added.length) return known
+  return [...added, ...known].sort((a, b) => b.triggeredAt.localeCompare(a.triggeredAt)).slice(0, 200)
 }
 
 /** Operaciones de seguridad que provee la pantalla de bloqueo (Gate). */
@@ -101,6 +122,7 @@ interface Ctx {
   security: Security
   toast: string
   refreshing: boolean
+  alertSync: AlertSync
   notify: (msg: string) => void
   asset: (id: string) => Asset | undefined
   brokerName: (id: string) => string
@@ -111,6 +133,8 @@ interface Ctx {
   saveAlert: (rule: AlertRule) => void
   deleteAlert: (id: string) => void
   setSettings: (patch: Partial<Settings>) => void
+  setPush: (sub: PushSubscriptionJSON | null) => void
+  syncAlerts: (subscription?: PushSubscriptionJSON | null) => Promise<void>
   refresh: (silent?: boolean) => Promise<void>
   replaceAll: (next: State) => void
 }
@@ -122,7 +146,10 @@ export function AppProvider({ initial, session, security, children }: { initial:
   const [state, setState] = useState<State>(initial)
   const [toast, setToast] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [alertSync, setAlertSync] = useState<AlertSync>('off')
   const notify = (msg: string) => setToast(msg)
+  // El servidor solo se usa con datos reales.
+  const online = !state.demo && quotesEnabled()
 
   // Cada cambio se cifra y se guarda. El primer render no: es lo que se acaba de leer.
   const loaded = useRef(false)
@@ -136,7 +163,7 @@ export function AppProvider({ initial, session, security, children }: { initial:
 
   useEffect(() => {
     if (!toast) return
-    const id = setTimeout(() => setToast(''), 5000)
+    const id = setTimeout(() => setToast(''), 6000)
     return () => clearTimeout(id)
   }, [toast])
 
@@ -164,11 +191,52 @@ export function AppProvider({ initial, session, security, children }: { initial:
   const views = useMemo(() => valuePositions(ledger, state.quotes, fx), [ledger, state.quotes, fx])
   const tot = useMemo(() => totals(views, ledger), [views, ledger])
 
+  // ---------- alertas en el servidor ----------
+
+  // Al abrir: la suscripción push real del dispositivo manda sobre lo guardado (pudo caducar,
+  // o los datos pudieron restaurarse en otro celular).
+  useEffect(() => {
+    if (initial.demo) return
+    currentPush().then(
+      (sub) =>
+        setState((s) => {
+          const same = (s.pushSub?.endpoint ?? null) === (sub?.endpoint ?? null)
+          const on = !!sub && s.settings.notifyPush
+          if (same && on === s.settings.notifyPush) return s
+          return { ...s, pushSub: sub, settings: { ...s.settings, notifyPush: on } }
+        }),
+      () => {},
+    )
+  }, [initial.demo])
+
+  // Las reglas y la suscripción se envían al servidor cada vez que cambian (y una vez al abrir).
+  const subscription = state.settings.notifyPush ? state.pushSub : null
+  const payload = useMemo(
+    () => (online ? JSON.stringify(buildSyncPayload(state.alerts, state.assets, subscription)) : ''),
+    [online, state.alerts, state.assets, subscription],
+  )
+  const push = async (body: string) => {
+    try {
+      await putAlerts(state.deviceKey, JSON.parse(body))
+      setAlertSync('ok')
+    } catch (err) {
+      setAlertSync(err instanceof ServerError && err.status === 401 ? 'ajeno' : 'error')
+      throw err
+    }
+  }
+  useEffect(() => {
+    if (!payload) return setAlertSync('off')
+    setAlertSync('pendiente')
+    const id = setTimeout(() => push(payload).catch(() => {}), 800)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload, state.deviceKey])
+
   /**
-   * Actualiza precios y dólar, y revisa las alertas.
+   * Actualiza precios y dólar, trae las alertas cumplidas y revisa las reglas locales.
    * - Datos de ejemplo: simula un movimiento al azar (nunca se mezclan con precios reales).
-   * - Datos reales: dólar observado desde mindicador.cl y precios desde el servidor de
-   *   cotizaciones. Lo que no se pueda actualizar conserva su último precio guardado.
+   * - Datos reales: dólar observado desde mindicador.cl; precios y alertas desde el servidor.
+   *   Lo que no se pueda actualizar conserva su último precio guardado.
    * `silent` = actualización automática: no muestra mensajes.
    */
   const busy = useRef(false)
@@ -183,7 +251,7 @@ export function AppProvider({ initial, session, security, children }: { initial:
           const price = q.price * (1 + (Math.random() - 0.5) * 0.008)
           quotes[q.assetId] = { ...q, price: Number(price.toFixed(q.price < 1000 ? 2 : 0)), asOf: now }
         }
-        return { ...s, quotes, events: evaluateAlerts(s, quotes, now) }
+        return { ...s, quotes, events: evaluateLocal(s, quotes, now) }
       })
       return
     }
@@ -191,9 +259,10 @@ export function AppProvider({ initial, session, security, children }: { initial:
     busy.current = true
     setRefreshing(true)
     try {
-      const [dollar, stocks] = await Promise.allSettled([
+      const [dollar, stocks, remote] = await Promise.allSettled([
         fetchDollar(),
         quotesEnabled() ? fetchQuotes(state.assets) : Promise.resolve({ quotes: [], failed: [] }),
+        quotesEnabled() ? fetchEvents(state.deviceKey) : Promise.resolve([]),
       ])
       const fresh: Quote[] = []
       if (dollar.status === 'fulfilled') fresh.push(dollar.value)
@@ -203,7 +272,8 @@ export function AppProvider({ initial, session, security, children }: { initial:
         const quotes = { ...s.quotes }
         // Solo se aplican precios de activos que siguen existiendo.
         for (const q of fresh) if (s.assets.some((a) => a.id === q.assetId)) quotes[q.assetId] = q
-        return { ...s, quotes, events: evaluateAlerts(s, quotes, now) }
+        const events = mergeEvents(evaluateLocal(s, quotes, now), remote.status === 'fulfilled' ? remote.value : [])
+        return { ...s, quotes, events }
       })
 
       if (!silent) {
@@ -225,7 +295,7 @@ export function AppProvider({ initial, session, security, children }: { initial:
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
 
-  // Al abrir (desbloquear) la app con datos reales, trae precios una vez.
+  // Al abrir (desbloquear) la app con datos reales, trae precios y alertas una vez.
   useEffect(() => {
     if (!initial.demo) refreshRef.current(true)
   }, [initial.demo])
@@ -253,6 +323,7 @@ export function AppProvider({ initial, session, security, children }: { initial:
     security,
     toast,
     refreshing,
+    alertSync,
     notify,
     asset: (id) => state.assets.find((a) => a.id === id),
     brokerName: (id) => brokers.find((b) => b.id === id)?.name ?? id,
@@ -282,6 +353,13 @@ export function AppProvider({ initial, session, security, children }: { initial:
       })),
     deleteAlert: (id) => setState((s) => ({ ...s, alerts: s.alerts.filter((a) => a.id !== id) })),
     setSettings: (patch) => setState((s) => ({ ...s, settings: { ...s.settings, ...patch } })),
+    setPush: (sub) => setState((s) => ({ ...s, pushSub: sub, settings: { ...s.settings, notifyPush: !!sub } })),
+    // Envío inmediato (sin esperar la pausa habitual). Acepta la suscripción recién creada,
+    // que todavía no está en el estado.
+    syncAlerts: async (sub) => {
+      if (!online) throw new Error('El servidor de alertas no se usa con datos de ejemplo.')
+      await push(JSON.stringify(buildSyncPayload(state.alerts, state.assets, sub === undefined ? subscription : sub)))
+    },
     refresh,
     replaceAll: (next) => setState(next),
   }

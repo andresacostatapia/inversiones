@@ -76,6 +76,7 @@ export interface AlertEvent {
   assetId: string
   triggeredAt: string
   value: number
+  valueText?: string // valor ya formateado (lo envía el servidor)
   message: string
 }
 

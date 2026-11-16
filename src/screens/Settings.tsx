@@ -1,21 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { Field, Seg, go } from '../components'
 import { PIN_HINT, PIN_RULE, PinInput } from '../Gate'
+import { sendTestPush, subscribePush, unlinkServer, unsubscribePush } from '../lib/alerts'
+import { quotesEnabled } from '../lib/quotes'
 import { emptyState, useApp } from '../store'
-import type { Settings as S } from '../types'
 
 export function Settings() {
-  const { state, setSettings, security, notify, replaceAll } = useApp()
+  const { state, setSettings, security, notify, replaceAll, setPush, syncAlerts, alertSync } = useApp()
   const s = state.settings
   const [pinOpen, setPinOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-
-  const toggle = (k: keyof S, label: string) => (
-    <label className="check between">
-      <span>{label}</span>
-      <input type="checkbox" checked={!!s[k]} onChange={(e) => setSettings({ [k]: e.target.checked })} />
-    </label>
-  )
+  const server = !state.demo && quotesEnabled()
 
   const run = async (action: () => Promise<void>, done?: string) => {
     setBusy(true)
@@ -27,6 +22,37 @@ export function Settings() {
     }
     setBusy(false)
   }
+
+  const togglePush = (on: boolean) =>
+    run(
+      async () => {
+        if (on) {
+          const sub = await subscribePush()
+          setPush(sub)
+          await syncAlerts(sub)
+        } else {
+          await unsubscribePush()
+          setPush(null)
+          await syncAlerts(null)
+        }
+      },
+      on ? 'Notificaciones activadas. Envía una de prueba para confirmar.' : 'Notificaciones desactivadas.',
+    )
+
+  const testPush = () =>
+    run(async () => {
+      await syncAlerts()
+      const r = await sendTestPush(state.deviceKey)
+      if (!r.ok) throw new Error(`El servicio de notificaciones rechazó el envío (código ${r.status}). Desactiva y vuelve a activar las notificaciones.`)
+    }, 'Notificación de prueba enviada. Debería llegar en unos segundos.')
+
+  const wipe = () =>
+    run(async () => {
+      // Primero se borra lo que guarda el servidor; si no hay conexión, se borra igual lo local.
+      if (server) await unlinkServer(state.deviceKey).catch(() => {})
+      await unsubscribePush().catch(() => {})
+      await security.wipe()
+    })
 
   return (
     <>
@@ -55,10 +81,22 @@ export function Settings() {
 
       <h2>Notificaciones</h2>
       <section className="card form">
-        {toggle('notifyPush', 'Notificaciones push')}
-        {toggle('notifyEmail', 'Correo')}
-        {toggle('notifyTelegram', 'Telegram')}
-        <p className="muted small">Los canales aún no envían mensajes reales.</p>
+        <label className="check between">
+          <span>
+            Notificaciones push
+            <div className="muted small">Avisan cuando se cumple una alerta, aunque la app esté cerrada.</div>
+          </span>
+          <input type="checkbox" checked={s.notifyPush} disabled={busy || !server} onChange={(e) => togglePush(e.target.checked)} />
+        </label>
+        {s.notifyPush && <button className="btn" disabled={busy} onClick={testPush}>Enviar notificación de prueba</button>}
+        {!server && <p className="muted small">No disponible con datos de ejemplo.</p>}
+        {server && alertSync === 'ajeno' && (
+          <p className="loss small">El servidor de alertas está vinculado a otra instalación de la app. Mientras no se desvincule, este dispositivo no recibirá avisos.</p>
+        )}
+        <p className="muted small">
+          El servidor revisa las reglas cada 5 minutos en horario de mercado. El aviso muestra el activo y el valor, y puede verse en la pantalla de bloqueo del
+          celular. En iPhone solo funciona con la app instalada en la pantalla de inicio. Correo y Telegram aún no están disponibles.
+        </p>
       </section>
 
       <h2>Seguridad</h2>
@@ -114,19 +152,20 @@ export function Settings() {
         {state.demo && (
           <button
             className="btn danger"
-            onClick={() => confirm('¿Quitar los datos de ejemplo y dejar el portafolio vacío?') && replaceAll({ ...emptyState(), settings: s })}
+            onClick={() => confirm('¿Quitar los datos de ejemplo y dejar el portafolio vacío?') && replaceAll({ ...emptyState(), settings: { ...s, notifyPush: false } })}
           >
             Quitar datos de ejemplo
           </button>
         )}
         <button
           className="btn danger"
-          onClick={() => confirm('Se borrarán TODOS los datos y el PIN de este dispositivo. No se puede deshacer. ¿Continuar?') && run(security.wipe)}
+          disabled={busy}
+          onClick={() => confirm('Se borrarán TODOS los datos y el PIN de este dispositivo, y las reglas guardadas en el servidor de alertas. No se puede deshacer. ¿Continuar?') && wipe()}
         >
           Borrar todo
         </button>
       </section>
-      <p className="foot muted">Inversiones 0.2 · datos cifrados, guardados solo en este dispositivo{state.demo ? ' · usando datos de ejemplo' : ''}.</p>
+      <p className="foot muted">Inversiones 0.3 · datos cifrados, guardados solo en este dispositivo{state.demo ? ' · usando datos de ejemplo' : ''}.</p>
     </>
   )
 }

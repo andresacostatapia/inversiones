@@ -87,9 +87,9 @@ export const seedSettings: Settings = {
   autoRefreshMin: 5,
   theme: 'auto',
   autoLockMin: 1,
-  notifyPush: true,
+  notifyPush: false,
   notifyEmail: false,
-  notifyTelegram: true,
+  notifyTelegram: false,
 }
 
 /** Serie diaria determinista (ejemplo) que termina en el precio actual. */
