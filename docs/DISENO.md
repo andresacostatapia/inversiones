@@ -205,13 +205,13 @@ Para publicar el servidor: `npx wrangler login` y luego `npm run deploy`, ambos 
 Funciona: todas las pantallas, cálculo de portafolio y ganancias, formulario rápido, importación CSV con detección de
 duplicados, exportación CSV, alertas (crear, silenciar, editar, eliminar), cambio de moneda y tema, **datos cifrados en
 IndexedDB, PIN, bloqueo automático, cambio de PIN, respaldo cifrado y restauración, agregar activos, precios editables a
-mano y uso sin conexión** (versión compilada).
+mano, uso sin conexión** (versión compilada) **y cotizaciones automáticas** con el servidor publicado en Cloudflare
+(su dirección está en `src/config.ts`).
 
 Simulado o pendiente:
-- **Cotizaciones:** implementadas y probadas en local; **falta publicar el servidor** (`worker/`) en Cloudflare y anotar
-  su dirección en `src/config.ts`. Hasta entonces, en la app publicada solo el dólar se actualiza solo.
-  Con datos de ejemplo, «Actualizar» sigue moviendo los precios al azar.
-- **Alertas:** solo precio y variación diaria se evalúan, y solo al tocar «Actualizar». Sin envío real por push, correo ni Telegram.
+- **Cotizaciones:** el índice IPSA no tiene símbolo en Yahoo, así que no se actualiza solo. Con datos de ejemplo,
+  «Actualizar» sigue moviendo los precios al azar. Falta ver la actualización periódica funcionando en horario de mercado.
+- **Alertas:** solo precio y variación diaria se evalúan, y solo con la app abierta (al actualizar precios). Sin envío real por push, correo ni Telegram.
 - **Biometría:** implementada pero **sin probar en un teléfono real** (el navegador de desarrollo no tiene sensor).
 - **Importación:** reconoce columnas por nombre genérico; faltan los perfiles de XTB, Zesty y Racional.
 - **Publicación:** GitHub Pages, desde `.github/workflows/publicar.yml`: cada cambio subido a `main` se compila y publica solo.

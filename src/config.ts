@@ -3,7 +3,7 @@
  * En desarrollo apunta al servidor local (`npm --prefix worker run dev`).
  * Vacío = sin cotizaciones automáticas: los precios se editan a mano.
  */
-const PUBLISHED = ''
+const PUBLISHED = 'https://inversiones-cotizaciones.inversiones-cotizaciones.workers.dev'
 
 export const QUOTES_URL: string = import.meta.env.VITE_QUOTES_URL ?? (import.meta.env.DEV ? 'http://localhost:8787' : PUBLISHED)
 
