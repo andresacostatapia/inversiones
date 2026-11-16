@@ -10,6 +10,7 @@ export interface Asset {
   type: AssetType
   exchange: string
   currency: Currency // moneda en que cotiza
+  providerSymbol?: string // símbolo en Yahoo Finance; sin definir = se deduce del mercado; '' = precio manual
 }
 
 export interface Broker {
@@ -50,6 +51,7 @@ export interface Quote {
   price: number
   prevClose: number
   asOf: string
+  auto?: boolean // true = vino del proveedor; falso o ausente = ingresado a mano
 }
 
 export interface AlertRule {

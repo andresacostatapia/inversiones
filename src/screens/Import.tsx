@@ -3,6 +3,7 @@ import { Field, go } from '../components'
 import { brokers } from '../data/seed'
 import { fingerprint, hashText, parseCsv, parseDate, parseNum } from '../lib/csv'
 import { fmtDate, fmtPrice, fmtQty } from '../lib/format'
+import { dollarForDates } from '../lib/quotes'
 import { uid, useApp } from '../store'
 import type { Currency, NewTrade, Side } from '../types'
 
@@ -43,7 +44,8 @@ const COLS: Record<string, string[]> = {
 type Status = { kind: 'ok' | 'duplicado' | 'error'; msg: string }
 
 export function Import() {
-  const { state, assets, asset, addTrades, setSettings, fx, brokerName } = useApp()
+  const { state, assets, asset, addTrades, setSettings, fx, brokerName, notify } = useApp()
+  const [saving, setSaving] = useState(false)
   const [brokerId, setBrokerId] = useState(state.settings.lastBrokerId)
   const [file, setFile] = useState<{ name: string; hash: string } | null>(null)
   const [drafts, setDrafts] = useState<Draft[]>([])
@@ -110,9 +112,20 @@ export function Import() {
   const patch = (key: number, p: Partial<Draft>) => setDrafts((ds) => ds.map((d) => (d.key === key ? { ...d, ...p } : d)))
   const previous = file && state.batches.find((b) => b.fileHash === file.hash)
 
-  const confirmImport = () => {
+  const confirmImport = async () => {
     const batchId = uid()
     const list = drafts.filter((_, i) => status[i].kind === 'ok').map((d) => ({ ...toTrade(d)!, importBatchId: batchId }))
+    // Cada operación lleva el dólar observado de SU fecha. La huella de duplicados no depende de él.
+    if (!state.demo) {
+      setSaving(true)
+      try {
+        const rates = await dollarForDates(list.map((t) => t.date))
+        for (const t of list) if (rates[t.date]) t.fxRate = rates[t.date]
+      } catch {
+        notify('No se pudo obtener el dólar de cada fecha: se usó el dólar de hoy en las operaciones importadas.')
+      }
+      setSaving(false)
+    }
     addTrades(list, { id: batchId, brokerId, fileName: file!.name, fileHash: file!.hash, importedAt: new Date().toISOString(), rowCount: list.length })
     setSettings({ lastBrokerId: brokerId })
     setDone(list.length)
@@ -213,7 +226,7 @@ export function Import() {
 
       <div className="grid2">
         <button className="btn" onClick={() => (setFile(null), setDrafts([]))}>Cancelar</button>
-        <button className="btn primary" disabled={count('ok') === 0} onClick={confirmImport}>Guardar {count('ok')} operaciones</button>
+        <button className="btn primary" disabled={count('ok') === 0 || saving} onClick={confirmImport}>{saving ? 'Guardando…' : `Guardar ${count('ok')} operaciones`}</button>
       </div>
       <p className="foot muted">Toca una fila para corregirla. Solo se guardan las marcadas como «Lista».</p>
     </>

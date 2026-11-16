@@ -172,7 +172,35 @@ Límites que conviene conocer:
 - Mientras la app está desbloqueada, los datos están en memoria. El cifrado protege el teléfono apagado, bloqueado o
   un respaldo extraviado; no protege de un dispositivo comprometido.
 
-## 5. Estado actual
+## 5. Cotizaciones (fase 2)
+
+Código en `worker/src/index.js`, `src/lib/quotes.ts` y `src/config.ts`.
+
+| Dato | Fuente | Cómo llega |
+|---|---|---|
+| Precios de acciones y ETF | Yahoo Finance (no oficial) | La app envía la lista de símbolos al servidor propio (`worker/`), que consulta a Yahoo. |
+| Dólar del día | Dólar observado, vía mindicador.cl | La app lo consulta directo. |
+| Dólar de cada operación | Dólar observado de esa fecha, vía mindicador.cl | Al registrar o importar. En fines de semana y feriados se usa el último publicado. |
+
+- **Por qué un servidor:** Yahoo no acepta consultas directas desde un navegador.
+- **Por qué Yahoo:** es la única fuente gratuita encontrada que cubre la Bolsa de Santiago (con 15 minutos de retraso).
+  Twelve Data la ofrece desde US$99 al mes; Finnhub gratis solo cubre EE.UU.; EODHD gratis da 20 consultas al día.
+- **Riesgo aceptado:** Yahoo no es un servicio oficial ni garantizado. Puede cambiar, limitar o bloquear sin aviso, y sus
+  términos no permiten redistribuir los datos. Por eso el servidor solo responde a esta app y los precios manuales siguen
+  disponibles como respaldo. Cambiar de proveedor solo toca `worker/src/index.js`.
+- **Qué ve el servidor:** símbolos. Nunca cantidades, operaciones ni montos. No guarda nada.
+- **Símbolos:** en la Bolsa de Santiago es el símbolo más `.SN` (`SQM-B.SN`); en EE.UU., el símbolo tal cual.
+  Cada activo puede llevar un símbolo distinto o quedar vacío (precio manual). Si la moneda que responde Yahoo no
+  coincide con la del activo, el precio se descarta.
+- **Cuándo se actualiza:** al abrir la app, al tocar «Actualizar» y cada N minutos mientras la app está a la vista y
+  la Bolsa de Santiago o la de Nueva York están operando. Con la app cerrada no se actualiza nada (eso es la fase 3).
+- **Protección del servidor:** solo acepta consultas con el origen de la app, valida los símbolos, limita a 40 por
+  consulta y reutiliza cada precio por 60 segundos. La comprobación de origen frena a otros sitios web, no a alguien
+  que escriba un programa a propósito.
+
+Para publicar el servidor: `npx wrangler login` y luego `npm run deploy`, ambos dentro de `worker/`.
+
+## 6. Estado actual
 
 Funciona: todas las pantallas, cálculo de portafolio y ganancias, formulario rápido, importación CSV con detección de
 duplicados, exportación CSV, alertas (crear, silenciar, editar, eliminar), cambio de moneda y tema, **datos cifrados en
@@ -180,20 +208,20 @@ IndexedDB, PIN, bloqueo automático, cambio de PIN, respaldo cifrado y restaurac
 mano y uso sin conexión** (versión compilada).
 
 Simulado o pendiente:
-- **Cotizaciones:** no hay proveedor. Con datos reales los precios y el dólar se editan a mano en el detalle del activo
-  (y la variación «hoy» queda en 0). Con datos de ejemplo, «Actualizar» los mueve al azar.
+- **Cotizaciones:** implementadas y probadas en local; **falta publicar el servidor** (`worker/`) en Cloudflare y anotar
+  su dirección en `src/config.ts`. Hasta entonces, en la app publicada solo el dólar se actualiza solo.
+  Con datos de ejemplo, «Actualizar» sigue moviendo los precios al azar.
 - **Alertas:** solo precio y variación diaria se evalúan, y solo al tocar «Actualizar». Sin envío real por push, correo ni Telegram.
 - **Biometría:** implementada pero **sin probar en un teléfono real** (el navegador de desarrollo no tiene sensor).
 - **Importación:** reconoce columnas por nombre genérico; faltan los perfiles de XTB, Zesty y Racional.
-- **Dólar histórico:** las filas importadas usan el dólar de hoy, no el de la fecha de la operación.
 - **Publicación:** GitHub Pages, desde `.github/workflows/publicar.yml`: cada cambio subido a `main` se compila y publica solo.
   Falta confirmar en un teléfono real que la app abre, se instala y funciona sin conexión.
 - **Ícono:** solo hay un SVG. iOS necesita además un PNG (`apple-touch-icon`) para mostrar el ícono en la pantalla de inicio.
 
-## 6. Fases siguientes
+## 7. Fases siguientes
 
 1. ~~Datos reales: IndexedDB cifrada, PIN/biometría, respaldo cifrado, agregar activos, service worker.~~ Hecho.
-2. Publicar con HTTPS e instalar en el celular; probar biometría. Cotizaciones y dólar reales vía Worker; actualización automática en horario de mercado.
+2. Publicar el servidor de cotizaciones. Probar la app y la biometría en el celular.
 3. Alertas en el servidor con push y Telegram; después medias móviles e indicadores.
 4. Perfiles de importación por broker.
 5. Opcional: captura de pantalla con reconocimiento de texto para pre-llenar el formulario.

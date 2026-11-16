@@ -48,7 +48,9 @@ export function Settings() {
             <option value={15}>Cada 15 minutos</option>
           </select>
         </Field>
-        <p className="muted small">Aún no hay cotizaciones automáticas: la actualización periódica solo actúa sobre los datos de ejemplo.</p>
+        <p className="muted small">
+          Solo mientras la app está abierta y la Bolsa de Santiago o la de Nueva York están operando. Al abrir la app siempre se actualiza una vez.
+        </p>
       </section>
 
       <h2>Notificaciones</h2>

@@ -19,7 +19,7 @@ const tabs: [string, string, string][] = [
 
 export function App() {
   const [name = '', arg, arg2] = useRoute()
-  const { cur, other, setSettings, refresh, toast } = useApp()
+  const { cur, other, setSettings, refresh, refreshing, toast } = useApp()
 
   let title = 'Inicio'
   let tab = 'inicio'
@@ -70,7 +70,7 @@ export function App() {
         <button className="cur-btn num" onClick={() => setSettings({ displayCurrency: other })} aria-label={`Moneda ${cur}. Cambiar a ${other}`}>
           {cur}
         </button>
-        <button className="icon-btn" onClick={refresh} aria-label="Actualizar cotizaciones">
+        <button className={`icon-btn ${refreshing ? 'spin' : ''}`} onClick={() => refresh()} disabled={refreshing} aria-label="Actualizar cotizaciones">
           <Icon name="refresh" />
         </button>
         <button className="icon-btn" onClick={() => go('ajustes')} aria-label="Ajustes">

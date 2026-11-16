@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Field, Seg, go } from '../components'
 import { brokers } from '../data/seed'
 import { parseNum } from '../lib/csv'
 import { fmtMoney, today } from '../lib/format'
+import { dollarForDates } from '../lib/quotes'
 import { useApp } from '../store'
 import type { Currency, Side } from '../types'
 
@@ -20,8 +21,24 @@ export function TradeForm({ assetId = '' }: { assetId?: string }) {
   const [tax, setTax] = useState('')
   const [currency, setCurrency] = useState<Currency>(asset(assetId)?.currency ?? state.settings.lastCurrency)
   const [brokerId, setBrokerId] = useState(state.settings.lastBrokerId)
-  const [fxRate, setFxRate] = useState(String(fx))
+  const [fxRate, setFxRate] = useState(String(fx).replace('.', ','))
+  const [fxEdited, setFxEdited] = useState(false)
   const [note, setNote] = useState('')
+
+  // El dólar de la operación es el de SU fecha. Se busca solo, salvo que el usuario lo haya escrito.
+  useEffect(() => {
+    if (fxEdited || state.demo) return
+    let current = true
+    if (date === today()) setFxRate(String(fx).replace('.', ','))
+    else
+      dollarForDates([date]).then(
+        (r) => current && r[date] && setFxRate(String(r[date]).replace('.', ',')),
+        () => {}, // sin conexión: queda el dólar actual, editable
+      )
+    return () => {
+      current = false
+    }
+  }, [date, fxEdited, fx, state.demo])
 
   const q = parseNum(qty)
   const p = parseNum(price)
@@ -64,7 +81,7 @@ export function TradeForm({ assetId = '' }: { assetId?: string }) {
       </div>
 
       <button type="button" className="link" onClick={() => setMore(!more)} aria-expanded={more}>
-        {more ? 'Ocultar detalles' : `Más detalles · ${brokers.find((b) => b.id === brokerId)?.name}, ${currency}, hoy`}
+        {more ? 'Ocultar detalles' : `Más detalles · ${brokers.find((b) => b.id === brokerId)?.name}, ${currency}, ${date === today() ? 'hoy' : date}`}
       </button>
       {more && (
         <>
@@ -87,7 +104,9 @@ export function TradeForm({ assetId = '' }: { assetId?: string }) {
                 <option>USD</option>
               </select>
             </Field>
-            <Field label="Dólar del día (CLP)"><input inputMode="decimal" value={fxRate} onChange={(e) => setFxRate(e.target.value)} /></Field>
+            <Field label="Dólar de esa fecha (CLP)">
+              <input inputMode="decimal" value={fxRate} onChange={(e) => (setFxRate(e.target.value), setFxEdited(true))} />
+            </Field>
           </div>
           <Field label="Nota"><textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         </>

@@ -84,7 +84,7 @@ export const seedSettings: Settings = {
   displayCurrency: 'CLP',
   lastBrokerId: 'racional',
   lastCurrency: 'CLP',
-  autoRefreshMin: 0,
+  autoRefreshMin: 5,
   theme: 'auto',
   autoLockMin: 1,
   notifyPush: true,

@@ -1,0 +1,10 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "inversiones-cotizaciones",
+	"main": "src/index.js",
+	"compatibility_date": "2026-11-01",
+	"vars": {
+		// Sitios desde los que la app puede consultar (separados por coma, sin espacios).
+		"ALLOWED_ORIGINS": "https://andresacostatapia.github.io,http://localhost:5173,http://localhost:4173"
+	}
+}

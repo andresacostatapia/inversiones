@@ -5,7 +5,12 @@ import { useApp } from '../store'
 export function Home() {
   const { tot, cur, other, views, state, asset, fx } = useApp()
   const movers = [...views].sort((a, b) => Math.abs(b.dayPct) - Math.abs(a.dayPct)).slice(0, 3)
-  const asOf = Object.values(state.quotes)[0]?.asOf
+  // Momento del precio más reciente entre los activos (sin contar el dólar, que es diario).
+  const asOf = Object.values(state.quotes)
+    .filter((q) => q.assetId !== 'USDCLP')
+    .map((q) => q.asOf)
+    .sort()
+    .at(-1)
 
   return (
     <>
@@ -74,7 +79,8 @@ export function Home() {
       </section>
 
       <p className="foot muted">
-        {state.demo ? 'Cotizaciones de ejemplo' : 'Precios ingresados a mano'}{asOf ? ` · ${fmtDate(asOf, true)}` : ''}. Esta app solo informa y registra: no
+        {state.demo ? 'Cotizaciones de ejemplo' : 'Último precio'}{asOf ? ` · ${fmtDate(asOf, true)}` : ''}
+        {state.demo ? '' : ' · la bolsa chilena llega con 15 min de retraso'}. Esta app solo informa y registra: no
         ejecuta órdenes.
       </p>
     </>

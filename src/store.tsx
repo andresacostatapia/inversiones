@@ -3,6 +3,7 @@ import { brokers, seedAlerts, seedAssets, seedEvents, seedQuotes, seedSettings, 
 import { fingerprint } from './lib/csv'
 import { describeRule } from './lib/format'
 import { buildLedger, totals, valuePositions, type Ledger, type PositionView, type Totals } from './lib/portfolio'
+import { fetchDollar, fetchQuotes, marketOpen, quotesEnabled } from './lib/quotes'
 import { saveData, type Session } from './lib/vault'
 import type { AlertEvent, AlertRule, Asset, Currency, ImportBatch, NewTrade, Quote, Settings, Trade } from './types'
 
@@ -48,6 +49,33 @@ export function hydrate(data: unknown): State {
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 
+/** Revisa las reglas de precio y de variación diaria; devuelve la lista de alertas cumplidas actualizada. */
+function evaluateAlerts(s: State, quotes: Record<string, Quote>, now: string): AlertEvent[] {
+  const events = [...s.events]
+  for (const r of s.alerts) {
+    const q = quotes[r.assetId]
+    const a = s.assets.find((x) => x.id === r.assetId)
+    if (r.muted || !q || !a) continue
+    const dayPct = (q.price / q.prevClose - 1) * 100
+    const hit =
+      (r.kind === 'precio_sobre' && q.price > (r.level ?? Infinity)) ||
+      (r.kind === 'precio_bajo' && q.price < (r.level ?? -Infinity)) ||
+      (r.kind === 'variacion_dia' && Math.abs(dayPct) >= (r.pct ?? Infinity))
+    // Una misma regla avisa a lo más una vez por día.
+    const already = events.some((e) => e.ruleId === r.id && e.triggeredAt.slice(0, 10) === now.slice(0, 10))
+    if (hit && !already)
+      events.unshift({
+        id: uid(),
+        ruleId: r.id,
+        assetId: r.assetId,
+        triggeredAt: now,
+        value: r.kind === 'variacion_dia' ? dayPct : q.price,
+        message: describeRule(r, a.currency),
+      })
+  }
+  return events
+}
+
 /** Operaciones de seguridad que provee la pantalla de bloqueo (Gate). */
 export interface Security {
   bioSupported: boolean
@@ -72,6 +100,7 @@ interface Ctx {
   tot: Totals
   security: Security
   toast: string
+  refreshing: boolean
   notify: (msg: string) => void
   asset: (id: string) => Asset | undefined
   brokerName: (id: string) => string
@@ -82,7 +111,7 @@ interface Ctx {
   saveAlert: (rule: AlertRule) => void
   deleteAlert: (id: string) => void
   setSettings: (patch: Partial<Settings>) => void
-  refresh: () => void
+  refresh: (silent?: boolean) => Promise<void>
   replaceAll: (next: State) => void
 }
 
@@ -92,6 +121,7 @@ export const useApp = () => useContext(AppCtx)!
 export function AppProvider({ initial, session, security, children }: { initial: State; session: Session; security: Security; children: ReactNode }) {
   const [state, setState] = useState<State>(initial)
   const [toast, setToast] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
   const notify = (msg: string) => setToast(msg)
 
   // Cada cambio se cifra y se guarda. El primer render no: es lo que se acaba de leer.
@@ -135,51 +165,81 @@ export function AppProvider({ initial, session, security, children }: { initial:
   const tot = useMemo(() => totals(views, ledger), [views, ledger])
 
   /**
-   * Aún no hay proveedor de cotizaciones (fase 2). Con datos de ejemplo se simula un
-   * movimiento al azar; con datos reales los precios NO se tocan. En ambos casos se
-   * evalúan las alertas de precio y de variación diaria.
+   * Actualiza precios y dólar, y revisa las alertas.
+   * - Datos de ejemplo: simula un movimiento al azar (nunca se mezclan con precios reales).
+   * - Datos reales: dólar observado desde mindicador.cl y precios desde el servidor de
+   *   cotizaciones. Lo que no se pueda actualizar conserva su último precio guardado.
+   * `silent` = actualización automática: no muestra mensajes.
    */
-  const refresh = () => {
+  const busy = useRef(false)
+  const refresh = async (silent = false) => {
+    if (busy.current) return
     const now = new Date().toISOString()
-    let quotes = state.quotes
-    if (state.demo) {
-      quotes = {}
-      for (const q of Object.values(state.quotes)) {
-        const price = q.price * (1 + (Math.random() - 0.5) * 0.008)
-        quotes[q.assetId] = { ...q, price: Number(price.toFixed(q.price < 1000 ? 2 : 0)), asOf: now }
-      }
-    } else notify('Aún no hay cotizaciones automáticas. Por ahora actualiza cada precio a mano en el detalle del activo.')
 
-    const events = [...state.events]
-    for (const r of state.alerts) {
-      const q = quotes[r.assetId]
-      const a = state.assets.find((x) => x.id === r.assetId)
-      if (r.muted || !q || !a) continue
-      const dayPct = (q.price / q.prevClose - 1) * 100
-      const hit =
-        (r.kind === 'precio_sobre' && q.price > (r.level ?? Infinity)) ||
-        (r.kind === 'precio_bajo' && q.price < (r.level ?? -Infinity)) ||
-        (r.kind === 'variacion_dia' && Math.abs(dayPct) >= (r.pct ?? Infinity))
-      const already = events.some((e) => e.ruleId === r.id && e.triggeredAt.slice(0, 10) === now.slice(0, 10))
-      if (hit && !already)
-        events.unshift({
-          id: uid(),
-          ruleId: r.id,
-          assetId: r.assetId,
-          triggeredAt: now,
-          value: r.kind === 'variacion_dia' ? dayPct : q.price,
-          message: describeRule(r, a.currency),
-        })
+    if (state.demo) {
+      setState((s) => {
+        const quotes: Record<string, Quote> = {}
+        for (const q of Object.values(s.quotes)) {
+          const price = q.price * (1 + (Math.random() - 0.5) * 0.008)
+          quotes[q.assetId] = { ...q, price: Number(price.toFixed(q.price < 1000 ? 2 : 0)), asOf: now }
+        }
+        return { ...s, quotes, events: evaluateAlerts(s, quotes, now) }
+      })
+      return
     }
-    if (quotes !== state.quotes || events.length !== state.events.length) setState((s) => ({ ...s, quotes, events }))
+
+    busy.current = true
+    setRefreshing(true)
+    try {
+      const [dollar, stocks] = await Promise.allSettled([
+        fetchDollar(),
+        quotesEnabled() ? fetchQuotes(state.assets) : Promise.resolve({ quotes: [], failed: [] }),
+      ])
+      const fresh: Quote[] = []
+      if (dollar.status === 'fulfilled') fresh.push(dollar.value)
+      if (stocks.status === 'fulfilled') fresh.push(...stocks.value.quotes)
+
+      setState((s) => {
+        const quotes = { ...s.quotes }
+        // Solo se aplican precios de activos que siguen existiendo.
+        for (const q of fresh) if (s.assets.some((a) => a.id === q.assetId)) quotes[q.assetId] = q
+        return { ...s, quotes, events: evaluateAlerts(s, quotes, now) }
+      })
+
+      if (!silent) {
+        const failed = stocks.status === 'fulfilled' ? stocks.value.failed : []
+        if (dollar.status === 'rejected' && stocks.status === 'rejected') notify('Sin conexión. Se muestran los últimos precios guardados.')
+        else if (stocks.status === 'rejected') notify('No se pudo consultar el servidor de cotizaciones. Se conservan los últimos precios.')
+        else if (!quotesEnabled()) notify('Dólar actualizado. El servidor de cotizaciones aún no está configurado: los precios siguen a mano.')
+        else if (failed.length) notify(`Actualizado, salvo: ${failed.join(', ')}. Revisa su símbolo o edita el precio a mano.`)
+        else if (dollar.status === 'rejected') notify('Precios actualizados. No se pudo obtener el dólar.')
+        else notify('Precios y dólar actualizados.')
+      }
+    } finally {
+      busy.current = false
+      setRefreshing(false)
+    }
   }
 
-  const autoRefresh = state.demo ? state.settings.autoRefreshMin : 0
+  // La actualización automática siempre usa la versión más reciente de `refresh`.
+  const refreshRef = useRef(refresh)
+  refreshRef.current = refresh
+
+  // Al abrir (desbloquear) la app con datos reales, trae precios una vez.
   useEffect(() => {
-    if (!autoRefresh) return
-    const id = setInterval(refresh, autoRefresh * 60_000)
+    if (!initial.demo) refreshRef.current(true)
+  }, [initial.demo])
+
+  // Después, cada N minutos mientras la app esté a la vista y algún mercado esté operando.
+  const every = state.settings.autoRefreshMin
+  const demo = state.demo
+  useEffect(() => {
+    if (!every) return
+    const id = setInterval(() => {
+      if (demo || (!document.hidden && marketOpen())) refreshRef.current(true)
+    }, every * 60_000)
     return () => clearInterval(id)
-  })
+  }, [every, demo])
 
   const ctx: Ctx = {
     state,
@@ -192,6 +252,7 @@ export function AppProvider({ initial, session, security, children }: { initial:
     tot,
     security,
     toast,
+    refreshing,
     notify,
     asset: (id) => state.assets.find((a) => a.id === id),
     brokerName: (id) => brokers.find((b) => b.id === id)?.name ?? id,
