@@ -1,0 +1,66 @@
+# Configuración de la app de análisis. Se puede editar a mano; se relee al reiniciar.
+# Las API keys NO van aquí: van en el archivo .env (ver .env.example).
+
+general:
+  timezone: America/Santiago        # zona horaria en que se muestran las horas
+  base_currency: CLP                # moneda de la cartera consolidada
+  database: data/analisis.db        # ruta relativa a la carpeta analisis/
+
+# Watchlist inicial. Después se edita desde la UI o la API (queda guardada en la base de datos).
+watchlist:
+  - SQM-B.SN
+  - CHILE.SN
+  - SPY
+  - VOO
+  - EEM
+  - VWO
+
+data:
+  poll_seconds: 60                  # cada cuánto se piden precios con el mercado abierto
+  closed_poll_seconds: 3600         # y con el mercado cerrado
+  history_years: 10                 # años de historia diaria para indicadores y backtest
+  stale_after_minutes: 30           # con el mercado abierto, un dato más viejo que esto se marca "desactualizado"
+  # Orden de proveedores por mercado. Se usa el primero que tenga API key y responda;
+  # si falla, se pasa al siguiente. yfinance no necesita key.
+  providers:
+    quotes:
+      CL: [yfinance]                # Bolsa de Santiago (.SN)
+      US: [finnhub, twelvedata, yfinance]
+    history:
+      CL: [yfinance]
+      US: [yfinance, twelvedata, alphavantage]
+  # Límites de consulta por proveedor (plan gratuito). Ajusta si tienes un plan pagado.
+  rate_limits:
+    yfinance:     {per_minute: 60}
+    finnhub:      {per_minute: 55}
+    twelvedata:   {per_minute: 8, per_day: 800}
+    alphavantage: {per_minute: 5, per_day: 25}
+  fx:
+    # Dólar observado (Banco Central vía mindicador.cl) y, como respaldo, USD/CLP de Yahoo.
+    sources: [mindicador, yfinance]
+
+# --- Fases siguientes (ya documentado aquí para tener un solo archivo de configuración) ---
+
+signals:                            # fase 2
+  thresholds: {buy: 30, sell: -30}
+  weights:
+    trend: 1.0
+    rsi: 1.0
+    macd: 1.0
+    bollinger: 1.0
+    volume: 1.0
+
+backtest:                           # fase 2
+  commission_pct: 0.5               # por operación
+  slippage_pct: 0.0
+
+risk_profile:                       # fase 4
+  horizon_months: [6, 12]
+  allow_leverage: false
+  allow_derivatives: false
+  allow_short: false
+  target_allocation: {CL: 0.30, INTL: 0.70}
+  review_drawdown_pct: -20          # alerta de revisión desde el precio de compra
+  sell_drawdown_pct: -25            # alerta de venta desde el precio de compra
+  monthly_contribution_clp: 0
+  fractional_shares: {CL: false, US: true}
