@@ -37,6 +37,53 @@ Se abre en una ventana propia (WebView2, ya incluido en Windows 10 y 11). Si fal
 Para compilarlo tú mismo en Windows: `pip install -r backend/requirements.txt -r desktop/requirements.txt`, compilar
 el dashboard (`npm run build`) y `pyinstaller --noconfirm desktop/AnalisisInversiones.spec` → `dist\AnalisisInversiones\`.
 
+## App Android (APK)
+
+El mismo dashboard, pero **todo se calcula en el teléfono**: no necesita el PC ni un servidor. Consulta Yahoo Finance
+y mindicador.cl directamente desde el teléfono y guarda tu cartera solo en el teléfono.
+El motor de análisis está portado a TypeScript (`frontend/src/core`) y una batería de pruebas exige que dé
+exactamente lo mismo que el de Python (`scripts/export_fixtures.py` → `golden.test.ts`).
+
+**Instalar**
+1. En GitHub: **Actions** → «App de análisis · Android» → la ejecución más reciente en verde → artefacto
+   **AnalisisInversiones-android** (un .zip con `AnalisisInversiones.apk`).
+2. Pasa el .apk al teléfono (por ejemplo, descargándolo desde el navegador del teléfono con tu sesión de GitHub).
+3. Ábrelo. Android pedirá permitir «instalar apps de fuentes desconocidas» para esa app (navegador o archivos).
+4. La primera vez, acepta las notificaciones: así llegan las alertas importantes.
+
+**Firma estable (recomendado antes de usarla en serio).** Android solo instala una versión nueva encima de la anterior
+si ambas están firmadas con la misma clave. Sin configurar nada, GitHub compila un APK de *depuración* con una clave
+distinta cada vez: para actualizar habría que desinstalar, y eso **borra la cartera guardada en el teléfono**.
+Para evitarlo, crea una clave una sola vez y guárdala como secretos del repositorio (nunca en el código: el repo es público):
+
+```bash
+keytool -genkeypair -v -keystore analisis.keystore -alias analisis -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 analisis.keystore      # Windows (PowerShell): [Convert]::ToBase64String([IO.File]::ReadAllBytes("analisis.keystore"))
+```
+
+En GitHub: **Settings → Secrets and variables → Actions → New repository secret**, cuatro secretos:
+`ANDROID_KEYSTORE_BASE64` (el texto base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`analisis`) y
+`ANDROID_KEY_PASSWORD`. Desde ahí el workflow compila la versión *release* firmada. Guarda `analisis.keystore` y sus
+claves en un lugar seguro: si se pierden, la siguiente versión no podrá instalarse encima.
+(`keytool` viene con Java o Android Studio.)
+
+**Respaldo.** En Cartera → *Respaldo* → «Copiar operaciones (CSV)»: copia tus operaciones en el formato de la PWA.
+Pégalas en una nota o correo. Para restaurarlas (o pasarlas del PC al teléfono y viceversa), pégalas en
+«Importar» → «…o pega aquí el contenido del CSV».
+
+**Diferencias con la versión de escritorio**
+- Fuente de datos: Yahoo (sin API key). Si Yahoo limita las consultas (error 429), la app pausa de 5 a 30 min y lo
+  indica en cada precio, en vez de insistir.
+- Alertas: como notificación del teléfono, evaluadas cada vez que la app se actualiza (abierta o recién vuelta a
+  primer plano). No hay Telegram ni email en el teléfono, y Android no permite revisar precios cada minuto con la app
+  cerrada.
+- La configuración usa los valores de `config.yaml` (30/70, −20 % / −25 %, umbrales ±30, aporte 500.000 CLP);
+  el monto del aporte se cambia en la pantalla de reparto.
+
+**Compilarlo tú mismo**: Node 20+, JDK 21 y el SDK de Android (Android Studio), luego
+`cd frontend && npm ci && npm run android:sync && cd android && ./gradlew assembleDebug`.
+Para probar el modo móvil en el navegador: `npm run build:mobile && npm run preview:mobile` (http://127.0.0.1:4174).
+
 ## Instalación
 
 Requiere **Python 3.11 o superior** y, para el dashboard, **Node.js 20 o superior**.
