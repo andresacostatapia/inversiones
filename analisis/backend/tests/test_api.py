@@ -114,3 +114,64 @@ def test_today_bar_follows_live_price(setup):
     bars = client.get("/api/instruments/SPY/history", params={"period": "1m"}).json()["bars"]
     last = bars[-1]
     assert last["date"] == "2026-11-23" and last["close"] == 999.0 and last["high"] >= 999.0
+
+
+# --- Fase 2 -------------------------------------------------------------------
+
+def test_signals_endpoints(setup):
+    client, _ = setup
+    assert client.get("/api/signals/SPY").status_code == 404  # sin historia todavía
+    res = client.post("/api/refresh").json()
+    assert set(res["signals"]) == {"SPY", "SQM-B.SN"}  # el ciclo recalcula y guarda las señales
+
+    data = client.get("/api/signals").json()
+    assert data["disclaimer"].startswith("Herramienta educativa")
+    spy = next(s for s in data["signals"] if s["symbol"] == "SPY")
+    assert spy["label"] in ("COMPRAR", "MANTENER", "VENDER")
+    assert -100 <= spy["score"] <= 100 and 0 <= spy["confidence"] <= 100
+    assert spy["summary"] and spy["reasons"] and len(spy["strategies"]) == 4
+    assert spy["price"]["freshness"]["label"]
+
+    one = client.get("/api/signals/spy").json()
+    assert one["symbol"] == "SPY" and one["previous"] is None and one["changed"] is False
+
+    hist = client.get("/api/signals/SPY/history", params={"period": "3m"}).json()
+    assert 55 <= len(hist["points"]) <= 70 and "composite" in hist["points"][-1]
+
+    strat = client.get("/api/strategies").json()
+    assert [s["key"] for s in strat["strategies"]] == ["trend", "rsi", "macd", "bollinger"]
+
+
+def test_signal_change_is_detected(setup):
+    client, prov = setup
+    client.post("/api/refresh")
+    app = client.app
+    from datetime import date
+
+    from app.db import SignalRow
+
+    with app.state.md.Session() as s:  # simula que ayer la señal era otra
+        s.add(SignalRow(symbol="SPY", date=date(2026, 11, 20), computed_at=prov.as_of, label="NADA", score=0,
+                        confidence=0, provisional=False, summary="", payload="{}"))
+        s.commit()
+    one = client.get("/api/signals/SPY").json()
+    assert one["previous"]["label"] == "NADA" and one["changed"] is True
+
+
+def test_backtest_endpoint(setup):
+    client, _ = setup
+    assert client.post("/api/backtest", json={"symbol": "SPY"}).status_code == 404
+    client.post("/api/refresh")
+    r = client.post("/api/backtest", json={"symbol": "SPY", "years": 0.2, "commission_pct": 0.1})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["assumptions"]["commission_pct"] == 0.1
+    assert body["strategies"][-1]["key"] == "composite"
+    assert body["buy_hold"]["metrics"]["total_return_pct"] is not None
+
+    r = client.post("/api/backtest", json={"symbol": "SPY", "strategies": ["rsi"], "buy_threshold": 20})
+    assert [s["key"] for s in r.json()["strategies"]] == ["rsi", "composite"]
+    assert r.json()["assumptions"]["thresholds"]["buy"] == 20
+
+    assert client.post("/api/backtest", json={"symbol": "SPY", "strategies": ["magia"]}).status_code == 422
+    assert client.post("/api/backtest", json={"symbol": "SPY", "buy_threshold": -40}).status_code == 422

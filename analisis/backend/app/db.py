@@ -73,6 +73,21 @@ class FxRateRow(Base):
     kind: Mapped[str] = mapped_column(String(12))  # observado / mercado
 
 
+class SignalRow(Base):
+    """Señal por símbolo y día. La del día en curso se sobrescribe hasta el cierre (provisional)."""
+
+    __tablename__ = "signals"
+    symbol: Mapped[str] = mapped_column(String(24), primary_key=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    label: Mapped[str | None] = mapped_column(String(10))
+    score: Mapped[float | None] = mapped_column(Float)
+    confidence: Mapped[float | None] = mapped_column(Float)
+    provisional: Mapped[bool] = mapped_column(Boolean, default=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[str] = mapped_column(Text)  # SignalResult completo en JSON
+
+
 def make_engine(path: Path | str):
     url = "sqlite://" if str(path) == ":memory:" else f"sqlite:///{path}"
     if str(path) != ":memory:":

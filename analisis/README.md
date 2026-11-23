@@ -13,7 +13,7 @@ Es independiente de la PWA que está en la raíz del repositorio: no comparte c�
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Datos (proveedores intercambiables, dólar, SQLite, actualización periódica) + indicadores | ✅ |
-| 2 | Motor de señales + backtest | pendiente |
+| 2 | Motor de señales + backtest | ✅ |
 | 3 | Dashboard web (React) | pendiente |
 | 4 | Cartera, aportes y alertas | pendiente |
 
@@ -41,7 +41,9 @@ Todo lo editable está en [`config.yaml`](config.yaml):
 - `data.providers`: orden de proveedores por mercado (`CL` = Bolsa de Santiago, `US` = EE.UU.). Se usa el primero
   que tenga API key y responda; si falla, se pasa al siguiente.
 - `data.rate_limits`: límite de consultas por proveedor. Ajústalo si tienes un plan pagado.
-- `risk_profile`, `signals` y `backtest`: se usan en las fases siguientes.
+- `signals`: umbrales de COMPRAR/VENDER, peso de cada estrategia y efecto del volumen.
+- `backtest`: comisión y deslizamiento por operación.
+- `risk_profile`: se usa en la fase 4.
 
 Símbolos: los de Santiago llevan el sufijo `.SN` (`SQM-B.SN`, `CHILE.SN`, `FALABELLA.SN`); los de EE.UU. van tal cual
 (`SPY`, `VOO`, `EEM`, `VWO`).
@@ -79,6 +81,9 @@ Todos los comandos se corren desde `analisis/backend` con el entorno virtual act
 python -m app.cli status                    # mercados abiertos/cerrados y proveedores configurados
 python -m app.cli quote SQM-B.SN CHILE.SN SPY
 python -m app.cli indicators VOO            # indicadores y métricas (descarga 2 años)
+python -m app.cli signal SQM-B.SN SPY       # señal con puntaje, confianza y razones
+python -m app.cli backtest SPY --years 10   # cada estrategia y la combinada vs buy & hold
+python -m app.cli backtest SPY --commission 0.1 --slippage 0.05
 python -m app.cli fx                        # dólar
 python -m app.cli refresh                   # actualiza toda la watchlist y la guarda en data/analisis.db
 ```
@@ -102,7 +107,12 @@ los precios cada 60 s mientras su mercado esté abierto (los feriados se respeta
 | GET | `/api/instruments/{symbol}/history?period=1y` | Velas diarias + todos los indicadores (`1m` … `10y`, `max`) |
 | GET | `/api/instruments/{symbol}/indicators` | Último valor de cada indicador + métricas básicas |
 | GET | `/api/fx` | Dólar |
-| POST | `/api/refresh` | Fuerza una actualización inmediata |
+| POST | `/api/refresh` | Fuerza una actualización inmediata (precios, historia y señales) |
+| GET | `/api/strategies` | Estrategias disponibles, pesos y umbrales |
+| GET | `/api/signals` | Señal actual de toda la watchlist |
+| GET | `/api/signals/{symbol}` | Señal con detalle por estrategia, razones, confianza, señal anterior |
+| GET | `/api/signals/{symbol}/history?period=1y` | Puntaje diario de cada estrategia y del combinado |
+| POST | `/api/backtest` | Backtest (ver abajo) |
 
 ### Frescura del dato
 
@@ -134,6 +144,87 @@ Mientras el mercado está abierto, la vela del día se arma con el precio en viv
 son **provisionales hasta el cierre**: `/indicators` lo indica con `"provisional": true`. Con el mercado abierto,
 el volumen del día aún está incompleto.
 
+## Motor de señales
+
+Cada estrategia es un módulo en [`backend/app/strategies/`](backend/app/strategies) que da un puntaje de
+**−100 (vender) a +100 (comprar)** para cada día, más sus razones en español.
+
+| Estrategia | Lógica | Nota |
+|---|---|---|
+| **Tendencia** | Precio vs SMA200 (±35, satura en ±5 %), SMA50 vs SMA200 (cruce dorado/de la muerte, ±35), pendiente de la EMA20 en 5 días (±30, satura en ±2 %) | Necesita 200 días |
+| **RSI** | Lineal por tramos: RSI 20 → +100, 30 → +60, 40 → +20, 50 → 0, 60 → −20, 70 → −60, 80 → −100 | |
+| **MACD** | Sobre/bajo su señal (±40) + cruce en los últimos 3 días (±40) + signo del MACD (±20) | |
+| **Bollinger** | (0,5 − %B) × 160: banda inferior → +80, superior → −80. **Se reduce a la mitad** si va contra la tendencia (comprar una caída bajo la SMA200, vender una subida sobre ella) | |
+
+**Señal combinada** = promedio ponderado de las estrategias con datos (pesos en `config.yaml`; peso 0 la desactiva),
+multiplicado por el **factor de volumen**:
+- Volumen ≥ 1,5x el promedio a favor del movimiento: la confirma (× 1,2).
+- Volumen alto en contra: la debilita (× 0,8).
+- Volumen < 0,7x: la debilita (× 0,9).
+- El volumen no vota por sí solo, y con el mercado abierto no se usa porque el volumen del día está incompleto.
+
+Con puntaje ≥ +30 la señal es **COMPRAR**, con ≤ −30 es **VENDER**, y en medio **MANTENER**. Los umbrales están en `signals.thresholds`.
+Si tienen datos menos de la mitad del peso (por ejemplo, con menos de 20 días de historia), no hay señal.
+
+Como no se permiten ventas en corto, cada señal se traduce en una acción según si tienes el activo o no:
+
+| Señal | Si lo tienes | Si no lo tienes |
+|---|---|---|
+| COMPRAR | Puedes mantener o aumentar | Considerar comprar |
+| MANTENER | Mantener | Esperar una mejor entrada |
+| VENDER | Considerar vender o reducir | Evitar comprar por ahora |
+
+La **confianza (0–100 %)** combina tres cosas:
+- **Acuerdo (65 %):** el peso de las estrategias que apuntan en la dirección de la señal. Las neutrales cuentan la mitad. Para MANTENER, el peso de las que también están en zona neutral.
+- **Fuerza (35 %):** cuánto pasa el puntaje del umbral. Para MANTENER, qué tan cerca está de 0.
+- **Calidad de los datos:** reduce la confianza si faltan estrategias por historia corta, si el precio está desactualizado (× 0,85) o si el ATR supera 1,5 veces su mediana de un año (× 0,8).
+
+Cada señal incluye además:
+- un resumen, por ejemplo «Cruce MACD alcista hoy + Precio bajo la banda inferior de Bollinger»;
+- todas las razones y los avisos;
+- un **stop de referencia** informativo (cierre − 2×ATR);
+- la **señal del día anterior**, para saber si cambió.
+
+Con el mercado abierto, la señal es **provisional** hasta el cierre.
+Las señales se recalculan en cada ciclo de actualización y se guardan, una por símbolo y día, en la tabla `signals`.
+
+Con los umbrales de ±30, en los 10 años de historia de la watchlist inicial la señal combinada fue MANTENER
+alrededor del 90 % de los días, COMPRAR ~5 % y VENDER ~3 %. Es selectiva a propósito, pensando en un horizonte de 6–12 meses.
+
+## Backtest
+
+```bash
+curl -X POST localhost:8000/api/backtest -H 'content-type: application/json' \
+     -d '{"symbol": "SPY", "years": 10, "commission_pct": 0.5}'
+```
+
+Campos opcionales: `strategies` (subconjunto), `commission_pct`, `slippage_pct`, `buy_threshold`,
+`sell_threshold` y `weights`. Por defecto se usa lo de `config.yaml`.
+
+Reglas, en [`backend/app/backtest.py`](backend/app/backtest.py):
+- **Sin mirar el futuro:** la señal se calcula al cierre del día t y se ejecuta en la **apertura del día t+1**.
+- Solo largo, 100 % dentro o fuera. Entra con puntaje ≥ umbral de compra, sale con ≤ umbral de venta y en medio
+  mantiene lo que tenga.
+- Comisión + deslizamiento en cada compra y en cada venta (0,5 % por defecto). Una posición abierta al final
+  se valoriza a mercado.
+- **Precios ajustados por dividendos** cuando el proveedor los entrega, así se compara el retorno total.
+- Buy & hold compra en la misma apertura en que empieza la estrategia. Todas empiezan el primer día con
+  200 días de historia, así que con 10 años de datos se evalúan unos 9,2.
+
+Entrega para cada estrategia y para la combinada:
+- retorno total y anualizado;
+- **drawdown máximo**;
+- volatilidad y Sharpe;
+- número de operaciones, **win rate**, retorno medio por operación y % del tiempo invertido;
+- la diferencia contra buy & hold y una frase de conclusión;
+- la curva de capital semanal y la lista de operaciones.
+
+> Un backtest favorable puede deberse a **sobreajuste**. No ajustes pesos y umbrales hasta que el pasado se vea
+> bien: el próximo año no va a repetir los últimos diez.
+
+Ejemplo real, SPY, 2016–2026, comisión de 0,5 %. Buy & hold ganó +281 % con una caída máxima de −34 %. La tendencia
+sola ganó +155 % con −22 %. El MACD solo perdió dinero: hace más de 100 operaciones y las comisiones se lo comen.
+
 ## Tests
 
 ```bash
@@ -160,6 +251,10 @@ analisis/
     │   ├── market_hours.py horarios con feriados (XSGO, XNYS) y etiqueta de frescura
     │   ├── scheduler.py   qué actualizar y cuándo
     │   ├── indicators.py
+    │   ├── strategies/    trend, rsi, macd, bollinger (una por módulo)
+    │   ├── signals.py     combinación, confianza, razones
+    │   ├── signal_service.py  señales desde SQLite + backtest
+    │   ├── backtest.py
     │   ├── api/routes.py
     │   └── providers/     base, yfinance, finnhub, twelvedata, alphavantage, fx, router
     └── tests/

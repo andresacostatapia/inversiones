@@ -35,8 +35,9 @@ def due_symbols(
 
 
 class Poller:
-    def __init__(self, md: MarketData):
+    def __init__(self, md: MarketData, signals=None):
         self.md = md
+        self.signals = signals  # SignalService (opcional): recalcula señales tras cada actualización
         self.cfg = md.cfg.data
         self.last_history: dict[str, datetime] = {}
         self.was_open: dict[str, bool] = {}
@@ -73,10 +74,18 @@ class Poller:
                 except Exception as e:
                     log.warning("historia de %s: %s", sym, e)
                 self.last_history[sym] = now  # también si falló: se reintenta en el próximo plazo
+        signals_done = []
+        if self.signals is not None:
+            for sym in sorted({s for s, ok in results.items() if ok} | set(history_done)):
+                try:
+                    self.signals.current(sym)
+                    signals_done.append(sym)
+                except Exception as e:
+                    log.warning("señal de %s: %s", sym, e)
         for market in {market_of(s) for s in symbols}:
             self.was_open[market] = is_open(market, now)
         self.last_cycle = now
-        return {"quotes": results, "fx": fx_due, "history": history_done}
+        return {"quotes": results, "fx": fx_due, "history": history_done, "signals": signals_done}
 
     async def run(self) -> None:
         while True:

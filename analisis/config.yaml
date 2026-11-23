@@ -39,22 +39,27 @@ data:
     # Dólar observado (Banco Central vía mindicador.cl) y, como respaldo, USD/CLP de Yahoo.
     sources: [mindicador, yfinance]
 
-# --- Fases siguientes (ya documentado aquí para tener un solo archivo de configuración) ---
+# --- Motor de señales y backtest (fase 2) ---
 
-signals:                            # fase 2
+signals:
+  # Puntaje combinado (-100 a +100): >= buy es COMPRAR, <= sell es VENDER, en medio MANTENER.
   thresholds: {buy: 30, sell: -30}
+  # Peso de cada estrategia en el promedio ponderado. 0 = desactivada.
   weights:
-    trend: 1.0
-    rsi: 1.0
-    macd: 1.0
-    bollinger: 1.0
-    volume: 1.0
+    trend: 1.0        # tendencia: precio vs SMA200, SMA50 vs SMA200, pendiente de la EMA20
+    rsi: 1.0          # RSI(14): sobreventa (+) / sobrecompra (-)
+    macd: 1.0         # MACD: posición frente a su señal, cruces recientes, signo
+    bollinger: 1.0    # Bandas de Bollinger (%B), filtrado por la tendencia
+  # El volumen no vota: confirma o debilita la señal combinada. 0,2 = hasta ±20 %. 0 = sin efecto.
+  volume_effect: 0.2
 
-backtest:                           # fase 2
-  commission_pct: 0.5               # por operación
-  slippage_pct: 0.0
+backtest:
+  commission_pct: 0.5               # por operación (compra o venta)
+  slippage_pct: 0.0                 # deslizamiento por operación
+  default_years: 10
 
-risk_profile:                       # fase 4
+# --- Perfil de riesgo (fase 4) ---
+risk_profile:
   horizon_months: [6, 12]
   allow_leverage: false
   allow_derivatives: false

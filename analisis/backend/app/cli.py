@@ -2,6 +2,8 @@
 
     python -m app.cli quote SQM-B.SN SPY
     python -m app.cli indicators VOO
+    python -m app.cli signal SQM-B.SN SPY
+    python -m app.cli backtest SPY --years 10
     python -m app.cli fx
     python -m app.cli refresh        # una pasada completa que guarda en SQLite
     python -m app.cli status
@@ -103,11 +105,13 @@ def cmd_refresh(args, cfg, router) -> int:
     from .db import make_engine, make_session_factory
     from .market_data import MarketData
     from .scheduler import Poller
+    from .signal_service import SignalService
 
     md = MarketData(cfg, make_session_factory(make_engine(cfg.database_path)), router,
                     build_fx_service(cfg.data.fx.sources, router.providers.get("yfinance")))
     md.seed_watchlist()
-    res = Poller(md).cycle()
+    sigs = SignalService(md)
+    res = Poller(md, sigs).cycle()
     print(f"Base de datos: {cfg.database_path}")
     for sym, ok in res["quotes"].items():
         print(f"  precio   {sym:<10} {'ok' if ok else 'ERROR'}")
@@ -117,7 +121,86 @@ def cmd_refresh(args, cfg, router) -> int:
     for v in md.quotes_view():
         print(f"  {v['symbol']:<10} {_fmt(v['price']):>14} {v['currency'] or '':<4} {v['freshness']['label']}"
               + (f"  ⚠ {v['error']}" if v["status"] != "ok" else ""))
+    print("\nSeñales:")
+    for sym in res["signals"]:
+        r = sigs.current(sym, store=False)
+        print(f"  {sym:<10} {r['label']:<9} {_fmt(r['score'], 1):>6}  conf. {_fmt(r['confidence'], 0):>3} %  {r['summary']}")
     return 0 if all(res["quotes"].values()) else 1
+
+
+def _download(router, sym: str, years: float):
+    start = datetime.now(timezone.utc) - timedelta(days=int(years * 365.25) + 10)
+    return router.get_history(sym, start=start)
+
+
+def cmd_signal(args, cfg, router) -> int:
+    from .signals import signal_for_bars
+
+    rc = 0
+    now = datetime.now(timezone.utc)
+    for raw in args.symbols:
+        sym = raw.upper()
+        try:
+            bars = _download(router, sym, 2)
+        except ProviderError as e:
+            print(f"{sym}: ERROR {e}\n")
+            rc = 1
+            continue
+        provisional = is_open(market_of(sym), now)
+        r = signal_for_bars(sym, bars, cfg.signals, provisional=provisional)
+        if r.label is None:
+            print(f"{sym}: {r.summary}\n")
+            continue
+        print(f"{sym}  {r.label}   puntaje {_fmt(r.score, 1)}   confianza {_fmt(r.confidence, 0)} %   "
+              f"(vela {r.date}{', provisional' if r.provisional else ''})")
+        print(f"  → {r.summary}")
+        print(f"  Si la tienes: {r.actions['holding']}  Si no: {r.actions['not_holding']}")
+        for v in r.strategies:
+            print(f"  {v.label:<10} {_fmt(v.score, 0):>5}   " + " · ".join(v.reasons))
+        for line in r.reasons[sum(len(v.reasons) for v in r.strategies):]:
+            print(f"  {line}")
+        for w in r.warnings:
+            print(f"  ⚠ {w}")
+        print()
+    return rc
+
+
+def cmd_backtest(args, cfg, router) -> int:
+    from .backtest import run_backtest
+
+    sym = args.symbol.upper()
+    bt = cfg.backtest.model_copy(update={k: v for k, v in
+                                         {"commission_pct": args.commission, "slippage_pct": args.slippage}.items()
+                                         if v is not None})
+    try:
+        bars = _download(router, sym, args.years + 1)  # +1 año para calentar la SMA200
+        r = run_backtest(sym, bars, cfg.signals, bt, years=args.years, include_curves=False)
+    except (ProviderError, ValueError) as e:
+        print(f"ERROR: {e}")
+        return 1
+    a = r["assumptions"]
+    print(f"{sym}: {r['start']} → {r['end']} ({_fmt(r['years'], 1)} años)"
+          f"{', precios ajustados por dividendos' if r['adjusted_prices'] else ''}")
+    print(f"Comisión {_fmt(a['commission_pct'])} % + deslizamiento {_fmt(a['slippage_pct'])} % por operación; "
+          f"compra >= {a['thresholds']['buy']:g}, venta <= {a['thresholds']['sell']:g}; {a['execution']}\n")
+    head = f"  {'Estrategia':<12}{'Retorno':>10}{'Anual':>8}{'Caída máx.':>12}{'Ops.':>6}{'Ganadoras':>11}{'Invertido':>11}"
+    print(head)
+    print("  " + "-" * (len(head) - 2))
+
+    def line(label, m):
+        print(f"  {label:<12}{_fmt(m['total_return_pct'], 1, ' %'):>10}{_fmt(m['cagr_pct'], 1, ' %'):>8}"
+              f"{_fmt(m['max_drawdown_pct'], 1, ' %'):>12}{m['trades']:>6}"
+              f"{(_fmt(m['win_rate_pct'], 0, ' %') if m['win_rate_pct'] is not None else '—'):>11}"
+              f"{_fmt(m['exposure_pct'], 0, ' %'):>11}")
+
+    line("Buy & hold", r["buy_hold"]["metrics"])
+    for it in r["strategies"]:
+        line(it["label"], it["metrics"])
+    print()
+    for it in r["strategies"]:
+        print(f"  {it['label']}: {it['vs_buy_hold']['verdict']}")
+    print(f"\n⚠ {r['warning']}")
+    return 0
 
 
 def cmd_status(args, cfg, router) -> int:
@@ -141,6 +224,13 @@ def main(argv=None) -> int:
     p = sub.add_parser("indicators", help="indicadores técnicos y métricas de un símbolo")
     p.add_argument("symbol")
     p.add_argument("--years", type=float, default=2.0, help="años de historia a descargar (mín. ~1 para SMA200)")
+    p = sub.add_parser("signal", help="señal COMPRAR / MANTENER / VENDER con sus razones")
+    p.add_argument("symbols", nargs="+")
+    p = sub.add_parser("backtest", help="backtest de cada estrategia y la combinada vs buy & hold")
+    p.add_argument("symbol")
+    p.add_argument("--years", type=float, default=10)
+    p.add_argument("--commission", type=float, default=None, help="%% por operación (por defecto, config.yaml)")
+    p.add_argument("--slippage", type=float, default=None, help="%% por operación")
     sub.add_parser("fx", help="dólar observado / USD-CLP")
     sub.add_parser("refresh", help="actualiza la watchlist y guarda en SQLite")
     sub.add_parser("status", help="mercados y proveedores")
@@ -149,7 +239,8 @@ def main(argv=None) -> int:
     cfg = get_config()
     router = build_router(cfg, get_secrets())
     print(DISCLAIMER + "\n")
-    cmds = {"quote": cmd_quote, "indicators": cmd_indicators, "fx": cmd_fx, "refresh": cmd_refresh, "status": cmd_status}
+    cmds = {"quote": cmd_quote, "indicators": cmd_indicators, "signal": cmd_signal, "backtest": cmd_backtest,
+            "fx": cmd_fx, "refresh": cmd_refresh, "status": cmd_status}
     return cmds[args.cmd](args, cfg, router)
 
 

@@ -19,6 +19,7 @@ from .market_data import MarketData
 from .providers.fx import FxService, build_fx_service
 from .providers.router import ProviderRouter, build_router
 from .scheduler import Poller
+from .signal_service import SignalService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -37,7 +38,8 @@ def create_app(
     engine = make_engine(db_path or cfg.database_path)
     md = MarketData(cfg, make_session_factory(engine), provider_router, fx)
     md.seed_watchlist()
-    poller = Poller(md)
+    signals = SignalService(md)
+    poller = Poller(md, signals)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -47,7 +49,7 @@ def create_app(
         await poller.stop()
 
     app = FastAPI(title="Análisis de acciones y ETF", description=DISCLAIMER, lifespan=lifespan)
-    app.state.md, app.state.poller = md, poller
+    app.state.md, app.state.poller, app.state.signals = md, poller, signals
     # El dashboard (fase 3) corre en otro puerto durante el desarrollo.
     app.add_middleware(
         CORSMiddleware,

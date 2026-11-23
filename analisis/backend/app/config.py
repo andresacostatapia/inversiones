@@ -56,6 +56,27 @@ class DataConfig(BaseModel):
     fx: FxConfig = Field(default_factory=FxConfig)
 
 
+class SignalThresholds(BaseModel):
+    buy: float = 30
+    sell: float = -30
+
+
+class SignalsConfig(BaseModel):
+    thresholds: SignalThresholds = Field(default_factory=SignalThresholds)
+    # Peso de cada estrategia en el promedio. 0 = desactivada.
+    weights: dict[str, float] = Field(
+        default_factory=lambda: {"trend": 1.0, "rsi": 1.0, "macd": 1.0, "bollinger": 1.0}
+    )
+    # Cuánto amplifica (o atenúa) el volumen relativo la señal combinada: 0,2 = ±20 %. 0 = sin efecto.
+    volume_effect: float = 0.2
+
+
+class BacktestConfig(BaseModel):
+    commission_pct: float = 0.5   # por operación (compra o venta)
+    slippage_pct: float = 0.0     # deslizamiento por operación
+    default_years: int = 10
+
+
 class GeneralConfig(BaseModel):
     timezone: str = "America/Santiago"
     base_currency: str = "CLP"
@@ -66,9 +87,9 @@ class AppConfig(BaseModel):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
     watchlist: list[str] = Field(default_factory=list)
     data: DataConfig = Field(default_factory=DataConfig)
-    # Secciones de fases posteriores: se guardan tal cual y se validan en su fase.
-    signals: dict[str, Any] = Field(default_factory=dict)
-    backtest: dict[str, Any] = Field(default_factory=dict)
+    signals: SignalsConfig = Field(default_factory=SignalsConfig)
+    backtest: BacktestConfig = Field(default_factory=BacktestConfig)
+    # Sección de la fase 4: se guarda tal cual y se valida en su fase.
     risk_profile: dict[str, Any] = Field(default_factory=dict)
 
     @property
