@@ -1,0 +1,79 @@
+# Compila la app de escritorio para Windows (analisis/) y la deja como artefacto descargable:
+# pestaña Actions → la ejecución → "AnalisisInversiones-windows".
+name: App de análisis · Windows
+
+on:
+  push:
+    paths: ['analisis/**', '.github/workflows/analisis-windows.yml']
+  pull_request:
+    paths: ['analisis/**', '.github/workflows/analisis-windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analisis-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: analisis
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: analisis/frontend/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            analisis/backend/requirements.txt
+            analisis/backend/requirements-dev.txt
+            analisis/desktop/requirements.txt
+
+      - name: Dashboard (tests y compilación)
+        working-directory: analisis/frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Dependencias de Python
+        run: python -m pip install -r backend/requirements-dev.txt -r desktop/requirements.txt
+
+      - name: Tests del backend (en Windows)
+        working-directory: analisis/backend
+        run: python -m pytest -q
+
+      - name: Empaquetar con PyInstaller
+        run: pyinstaller --noconfirm desktop/AnalisisInversiones.spec
+
+      - name: Prueba de arranque del .exe
+        run: |
+          $home_dir = Join-Path $env:RUNNER_TEMP 'smoke-home'
+          $p = Start-Process -FilePath 'dist\AnalisisInversiones\AnalisisInversiones.exe' `
+                -ArgumentList @('--smoke', '--home', $home_dir) -Wait -PassThru
+          Get-Content (Join-Path $home_dir 'logs\app.log') -ErrorAction SilentlyContinue | Select-Object -Last 20
+          $result = Get-Content (Join-Path $home_dir 'smoke.json') -ErrorAction SilentlyContinue
+          Write-Host "Código de salida: $($p.ExitCode) · resultado: $result"
+          if ($p.ExitCode -ne 0 -or -not ($result -match '"ok": true')) { exit 1 }
+
+      - name: Comprimir
+        run: Compress-Archive -Path dist\AnalisisInversiones -DestinationPath AnalisisInversiones-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AnalisisInversiones-windows
+          path: analisis/AnalisisInversiones-windows.zip
+          retention-days: 30

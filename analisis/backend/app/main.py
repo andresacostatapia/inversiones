@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -24,8 +26,11 @@ from .portfolio_service import PortfolioService
 from .scheduler import Poller
 from .signal_service import SignalService
 
-# Dashboard compilado (cd analisis/frontend && npm run build). Si existe, se sirve en la raíz.
-FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
+def frontend_dist() -> Path:
+    """Dashboard compilado (cd analisis/frontend && npm run build). Si existe, se sirve en la raíz.
+    La app de escritorio lo trae dentro del paquete e indica su ruta con ANALISIS_FRONTEND_DIST."""
+    return Path(os.environ.get("ANALISIS_FRONTEND_DIST") or ROOT_DIR / "frontend" / "dist")
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -69,8 +74,9 @@ def create_app(
         allow_headers=["*"],
     )
     app.include_router(router)
-    if FRONTEND_DIST.is_dir():
-        app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="dashboard")
+    dist = frontend_dist()
+    if dist.is_dir():
+        app.mount("/", StaticFiles(directory=dist, html=True), name="dashboard")
     return app
 
 

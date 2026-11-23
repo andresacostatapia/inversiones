@@ -9,3 +9,4 @@ pydantic-settings>=2.3
 PyYAML>=6.0
 SQLAlchemy>=2.0
 exchange_calendars>=4.5
+tzdata>=2024.1         # Windows no trae la base de zonas horarias (America/Santiago)

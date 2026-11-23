@@ -17,6 +17,26 @@ Es independiente de la PWA que está en la raíz del repositorio: no comparte c�
 | 3 | Dashboard web (React) | ✅ |
 | 4 | Cartera, aportes y alertas | ✅ |
 
+## App de escritorio para Windows (sin instalar Python)
+
+GitHub Actions compila un `.exe` en cada cambio de `analisis/` (workflow
+[`analisis-windows.yml`](../.github/workflows/analisis-windows.yml)):
+
+1. En GitHub: pestaña **Actions** → «App de análisis · Windows» → la ejecución más reciente en verde → artefacto
+   **AnalisisInversiones-windows** (un .zip de unos 70 MB).
+2. Descomprímelo donde quieras (por ejemplo, `Documentos\AnalisisInversiones`).
+3. Abre `AnalisisInversiones.exe`. Como no está firmado, Windows puede mostrar «Windows protegió su PC»:
+   **Más información → Ejecutar de todas formas** (solo la primera vez).
+
+Se abre en una ventana propia (WebView2, ya incluido en Windows 10 y 11). Si falla, abre el navegador.
+- Los datos viven en `%LOCALAPPDATA%\AnalisisInversiones`: `config.yaml`, `.env`, `data\analisis.db` y `logs\app.log`.
+  Para actualizar el programa basta con reemplazar la carpeta; tu cartera no se toca.
+- Si abres el programa dos veces, la segunda vez se muestra la misma instancia, no otra sobre la misma base de datos.
+- `AnalisisInversiones.exe --headless` deja solo el servidor en http://127.0.0.1:8765, para usarlo desde el navegador.
+
+Para compilarlo tú mismo en Windows: `pip install -r backend/requirements.txt -r desktop/requirements.txt`, compilar
+el dashboard (`npm run build`) y `pyinstaller --noconfirm desktop/AnalisisInversiones.spec` → `dist\AnalisisInversiones\`.
+
 ## Instalación
 
 Requiere **Python 3.11 o superior** y, para el dashboard, **Node.js 20 o superior**.

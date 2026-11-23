@@ -14,10 +14,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
+def app_home() -> Path:
+    """Carpeta con config.yaml, .env y data/. Por defecto analisis/; la app de escritorio la mueve a la carpeta del
+    usuario con la variable ANALISIS_HOME (así los datos sobreviven a una actualización del programa)."""
+    return Path(os.environ.get("ANALISIS_HOME") or ROOT_DIR)
+
+
 class Secrets(BaseSettings):
     """API keys y credenciales. Vienen del entorno o de analisis/.env; nunca de config.yaml."""
 
-    model_config = SettingsConfigDict(env_file=ROOT_DIR / ".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file_encoding="utf-8", extra="ignore")
 
     finnhub_api_key: str = ""
     twelvedata_api_key: str = ""
@@ -114,11 +120,11 @@ class AppConfig(BaseModel):
     @property
     def database_path(self) -> Path:
         p = Path(self.general.database)
-        return p if p.is_absolute() else ROOT_DIR / p
+        return p if p.is_absolute() else app_home() / p
 
 
 def load_config(path: Path | str | None = None) -> AppConfig:
-    path = Path(path or os.environ.get("ANALISIS_CONFIG", ROOT_DIR / "config.yaml"))
+    path = Path(path or os.environ.get("ANALISIS_CONFIG") or app_home() / "config.yaml")
     if not path.exists():
         return AppConfig()
     with open(path, encoding="utf-8") as f:
@@ -133,4 +139,4 @@ def get_config() -> AppConfig:
 
 @lru_cache
 def get_secrets() -> Secrets:
-    return Secrets()
+    return Secrets(_env_file=app_home() / ".env")
