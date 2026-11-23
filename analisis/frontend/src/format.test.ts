@@ -47,3 +47,16 @@ describe('lectura de números escritos a mano', () => {
     expect(clp(500, true)).toBe('+$ 500')
   })
 })
+
+import { toFixedPy } from './core/fmt'
+
+describe('redondeo idéntico a Python', () => {
+  it.each([
+    [2.5, 0, '2'], [3.5, 0, '4'], [0.125, 2, '0.12'], [0.375, 2, '0.38'],
+    [5.525, 2, '5.53'], // 5.525 en binario es 5.52500000000000035…: no es empate
+    [2.675, 2, '2.67'], // 2.67499999999999982…
+    [-0.04, 1, '-0.0'], [-2.5, 0, '-2'], [1234.5678, 1, '1234.6'],
+  ])('%s con %s decimales → %s', (v, nd, expected) => {
+    expect(toFixedPy(v, nd)).toBe(expected)
+  })
+})

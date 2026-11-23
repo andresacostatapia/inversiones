@@ -118,7 +118,8 @@ def metrics(sim: SimResult) -> dict:
         "sharpe": round(float(daily.mean() * ind.TRADING_DAYS / (vol or np.nan)), 2) if vol else None,
         "trades": len(closed),
         "win_rate_pct": round(len(wins) / len(closed) * 100, 1) if closed else None,
-        "avg_trade_pct": round(float(np.mean([t.return_pct for t in closed])), 2) if closed else None,
+        # Promedio en centésimas enteras: exacto, y así el motor TypeScript (app Android) da lo mismo.
+        "avg_trade_pct": round(sum(round(t.return_pct * 100) for t in closed) / len(closed) / 100, 2) if closed else None,
         "exposure_pct": round(float(sim.in_market.iloc[1:].mean()) * 100, 1),
         "open_position": bool(sim.trades and sim.trades[-1].open),
     }
