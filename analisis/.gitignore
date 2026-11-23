@@ -10,3 +10,4 @@ dist/
 # empaquetado de escritorio
 build/
 *.zip
+dist-mobile/

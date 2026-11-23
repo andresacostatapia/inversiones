@@ -310,5 +310,5 @@ export interface AlertsResponse {
   alerts: AlertItem[]
   unread: number
   by_severity: Partial<Record<Severity, number>>
-  channels: { telegram: boolean; email: boolean }
+  channels: { telegram: boolean; email: boolean; phone?: boolean }
 }

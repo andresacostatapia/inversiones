@@ -21,9 +21,12 @@ export function usePolling<T>(fn: () => Promise<T>, intervalMs: number, deps: un
   const fnRef = useRef(fn)
   fnRef.current = fn
   const seq = useRef(0)
+  const retries = useRef(0)
+  const retryTimer = useRef<number | undefined>(undefined)
 
   const reload = useCallback(async () => {
     const my = ++seq.current
+    window.clearTimeout(retryTimer.current)
     setLoading(true)
     try {
       const d = await fnRef.current()
@@ -31,8 +34,15 @@ export function usePolling<T>(fn: () => Promise<T>, intervalMs: number, deps: un
       setData(d)
       setError(null)
       setUpdatedAt(new Date())
+      retries.current = 0
     } catch (e) {
-      if (my === seq.current) setError(e instanceof Error ? e.message : String(e))
+      if (my !== seq.current) return
+      setError(e instanceof Error ? e.message : String(e))
+      // Primer arranque o falla pasajera: reintentar pronto (5 s, hasta 6 veces) en vez de esperar el próximo ciclo.
+      if (retries.current < 6) {
+        retries.current++
+        retryTimer.current = window.setTimeout(() => void reload(), 5000)
+      }
     } finally {
       if (my === seq.current) setLoading(false)
     }
@@ -41,15 +51,21 @@ export function usePolling<T>(fn: () => Promise<T>, intervalMs: number, deps: un
   useEffect(() => {
     setData(null)
     setError(null)
+    retries.current = 0
     reload()
-    if (!intervalMs) return
+    if (!intervalMs) return () => window.clearTimeout(retryTimer.current)
     const id = window.setInterval(() => {
       if (document.visibilityState === 'visible') reload()
     }, intervalMs)
     const onVisible = () => document.visibilityState === 'visible' && reload()
     document.addEventListener('visibilitychange', onVisible)
+    // App móvil: el backend local avisa cuando termina una actualización (ver local/router.ts).
+    const onUpdated = () => void reload()
+    window.addEventListener('analisis:actualizado', onUpdated)
     return () => {
+      window.removeEventListener('analisis:actualizado', onUpdated)
       window.clearInterval(id)
+      window.clearTimeout(retryTimer.current)
       document.removeEventListener('visibilitychange', onVisible)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

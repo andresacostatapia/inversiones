@@ -13,6 +13,7 @@ import type {
   Status,
   Transaction,
 } from './types'
+import { isNative } from './local/net'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -20,7 +21,19 @@ export class ApiError extends Error {
   }
 }
 
+/** Modo local (app Android, o `VITE_TARGET=mobile` para probarlo en el navegador): todo se calcula en el
+ * dispositivo, sin servidor. Si no, se usa la API HTTP del servidor de Python (Windows y escritorio). */
+export const LOCAL_MODE = import.meta.env.VITE_TARGET === 'mobile' || isNative()
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (LOCAL_MODE) {
+    const { localRequest } = await import('./local/router')
+    try {
+      return (await localRequest(path, init)) as T
+    } catch (e) {
+      throw new ApiError((e as { status?: number }).status ?? 500, (e as Error).message)
+    }
+  }
   let res: Response
   try {
     res = await fetch(`/api${path}`, {
@@ -77,7 +90,7 @@ export const api = {
   alerts: () => request<AlertsResponse>('/alerts'),
   readAlert: (id: number) => request<unknown>(`/alerts/${id}/read`, { method: 'POST' }),
   readAllAlerts: () => request<unknown>('/alerts/read-all', { method: 'POST' }),
-  testAlert: () => request<{ alert: AlertItem; sent: string[]; errors: string[]; channels: Record<string, boolean> }>(
+  testAlert: () => request<{ alert: AlertItem; sent: string[] | string | null; errors: string[]; channels: Record<string, boolean> }>(
     '/alerts/test', { method: 'POST' }),
 }
 

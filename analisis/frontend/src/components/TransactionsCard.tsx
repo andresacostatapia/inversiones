@@ -1,10 +1,54 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
-import { api } from '../api'
+import { api, LOCAL_MODE } from '../api'
 import { day, num, parseNum, price, todayISO } from '../format'
 import type { ImportResult, Transaction } from '../types'
 
 const EMPTY = { symbol: '', side: 'compra' as 'compra' | 'venta', quantity: '', price: '', fee: '', fx: '', date: todayISO(), note: '' }
 const IMPORT_STATUS: Record<string, string> = { lista: '✓ lista', duplicada: '↺ duplicada', error: '✕ error', importada: '✓ importada' }
+
+/** Operaciones en el mismo CSV que exporta la PWA (se puede volver a importar aquí o en la otra app). */
+export function toCsv(txs: Transaction[]): string {
+  const esc = (v: string | number) => (/[";\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))
+  const rows = [['Fecha', 'Activo', 'Tipo', 'Cantidad', 'Precio', 'Comisión', 'Impuestos', 'Moneda', 'Tipo de cambio', 'Broker', 'Nota'],
+    ...[...txs].reverse().map((t) => [t.date, t.symbol, t.side, t.quantity, t.price, t.fee, 0, t.currency, t.fx_rate, '', t.note ?? ''])]
+  return rows.map((r) => r.map(esc).join(';')).join('\r\n')
+}
+
+function ExportBox({ txs }: { txs: Transaction[] }) {
+  const [msg, setMsg] = useState<string | null>(null)
+  const [shown, setShown] = useState<string | null>(null)
+  const csv = () => toCsv(txs)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(csv())
+      setMsg(`${txs.length} operaciones copiadas. Pégalas en una nota o correo como respaldo.`)
+    } catch {
+      setShown(csv()) // sin acceso al portapapeles: se muestra para copiar a mano
+    }
+  }
+  function download() {
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv()], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `operaciones-${todayISO()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+  return (
+    <div className="import">
+      <h3 style={{ marginBottom: 6 }}>Respaldo</h3>
+      <div className="chips">
+        <button className="btn" onClick={copy} disabled={!txs.length}>Copiar operaciones (CSV)</button>
+        {!LOCAL_MODE && <button className="btn" onClick={download} disabled={!txs.length}>Descargar CSV</button>}
+      </div>
+      <p className="muted small" style={{ margin: '6px 0 0' }}>
+        Mismo formato que la PWA: se puede pegar abajo (en esta app o en la otra) para restaurar o pasar la cartera.
+      </p>
+      {msg && <p className="small">{msg}</p>}
+      {shown && <textarea className="input paste" readOnly value={shown} onFocus={(e) => e.target.select()} />}
+    </div>
+  )
+}
 
 function ImportBox({ onDone }: { onDone: () => void }) {
   const [text, setText] = useState<string | null>(null)
@@ -13,19 +57,23 @@ function ImportBox({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  async function pick(e: ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]
-    if (!f) return
-    setName(f.name)
+  const [pasted, setPasted] = useState('')
+
+  async function review(t: string, label: string) {
+    setName(label)
     setError(null)
     setPrev(null)
-    const t = await f.text()
     setText(t)
     try {
       setPrev(await api.importCsv(t, false))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
+  }
+
+  async function pick(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (f) await review(await f.text(), f.name)
   }
 
   async function commit() {
@@ -50,6 +98,11 @@ function ImportBox({ onDone }: { onDone: () => void }) {
         En la PWA: Historial → Exportar CSV. También sirve otro CSV con columnas Fecha, Activo, Tipo, Cantidad, Precio.
       </p>
       <input type="file" accept=".csv,.txt,text/csv" onChange={pick} aria-label="Archivo CSV" />
+      <textarea className="input paste" placeholder="…o pega aquí el contenido del CSV" value={pasted}
+                onChange={(e) => setPasted(e.target.value)} aria-label="Contenido del CSV" />
+      <button className="btn" style={{ marginTop: 6 }} disabled={!pasted.trim()} onClick={() => review(pasted, 'Texto pegado')}>
+        Revisar texto pegado
+      </button>
       {error && <p className="error" role="alert">{error}</p>}
       {prev && (
         <>
@@ -186,6 +239,7 @@ export function TransactionsCard({ txs, onChanged }: { txs: Transaction[] | null
           </table>
         </div>
       )}
+      {txs && txs.length > 0 && <ExportBox txs={txs} />}
       <ImportBox onDone={onChanged} />
     </section>
   )

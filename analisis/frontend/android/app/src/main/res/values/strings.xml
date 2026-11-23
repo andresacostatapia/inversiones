@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Análisis de acciones</string>
+    <string name="title_activity_main">Análisis de acciones</string>
+    <string name="package_name">cl.analisis.inversiones</string>
+    <string name="custom_url_scheme">cl.analisis.inversiones</string>
+</resources>

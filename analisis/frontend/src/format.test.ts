@@ -60,3 +60,18 @@ describe('redondeo idéntico a Python', () => {
     expect(toFixedPy(v, nd)).toBe(expected)
   })
 })
+
+import { toCsv } from './components/TransactionsCard'
+
+describe('respaldo de operaciones en CSV', () => {
+  it('usa el formato de la PWA, de la más antigua a la más nueva', () => {
+    const csv = toCsv([
+      { id: 2, symbol: 'SPY', side: 'venta', quantity: 1, price: 740, currency: 'USD', date: '2026-09-01', fee: 1, fx_rate: 960, fx_source: 'manual', note: 'toma; de ganancia', total: 739 },
+      { id: 1, symbol: 'SQM-B.SN', side: 'compra', quantity: 40, price: 70000, currency: 'CLP', date: '2026-03-10', fee: 1500, fx_rate: 950, fx_source: 'historico', note: null, total: 2801500 },
+    ])
+    const lines = csv.split('\r\n')
+    expect(lines[0]).toBe('Fecha;Activo;Tipo;Cantidad;Precio;Comisión;Impuestos;Moneda;Tipo de cambio;Broker;Nota')
+    expect(lines[1]).toBe('2026-03-10;SQM-B.SN;compra;40;70000;1500;0;CLP;950;;')
+    expect(lines[2]).toBe('2026-09-01;SPY;venta;1;740;1;0;USD;960;;"toma; de ganancia"')
+  })
+})

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../api'
+import { api, LOCAL_MODE } from '../api'
 import { dateTime } from '../format'
 import type { AlertsResponse, Severity } from '../types'
 
@@ -24,8 +24,11 @@ export function AlertsView({ data, onChanged, onSelect }: {
     setMsg(null)
     try {
       const r = await api.testAlert()
-      setMsg(r.sent.length ? `Enviada por ${r.sent.join(' y ')}.` + (r.errors.length ? ` Fallas: ${r.errors.join('; ')}` : '')
-        : r.errors.length ? `No se pudo enviar: ${r.errors.join('; ')}` : 'Guardada en la app. No hay Telegram ni email configurados en .env.')
+      const sent = Array.isArray(r.sent) ? r.sent : r.sent ? [r.sent] : []
+      setMsg(sent.length ? `Enviada por ${sent.join(' y ').replace('telefono', 'notificación del teléfono')}.` + (r.errors.length ? ` Fallas: ${r.errors.join('; ')}` : '')
+        : r.errors.length ? `No se pudo enviar: ${r.errors.join('; ')}`
+          : LOCAL_MODE ? 'Guardada en la app. Para recibir notificaciones, permite las notificaciones de la app en Android.'
+            : 'Guardada en la app. No hay Telegram ni email configurados en .env.')
       onChanged()
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e))
@@ -38,9 +41,15 @@ export function AlertsView({ data, onChanged, onSelect }: {
       <div className="card-head">
         <h2 id="al-title">Alertas</h2>
         <div className="chips">
-          <span className="chip">UI ✓</span>
-          <span className="chip">Telegram {ch?.telegram ? '✓' : '— sin configurar'}</span>
-          <span className="chip">Email {ch?.email ? '✓' : '— sin configurar'}</span>
+          <span className="chip">En la app ✓</span>
+          {LOCAL_MODE ? (
+            <span className="chip">Notificaciones del teléfono {ch?.phone ? '✓' : '— sin permiso'}</span>
+          ) : (
+            <>
+              <span className="chip">Telegram {ch?.telegram ? '✓' : '— sin configurar'}</span>
+              <span className="chip">Email {ch?.email ? '✓' : '— sin configurar'}</span>
+            </>
+          )}
           <button className="btn" onClick={test}>Enviar prueba</button>
           <button className="btn" disabled={!data?.unread} onClick={async () => { await api.readAllAlerts(); onChanged() }}>
             Marcar todas como leídas
@@ -50,7 +59,10 @@ export function AlertsView({ data, onChanged, onSelect }: {
       {msg && <p className="small">{msg}</p>}
       <p className="muted small" style={{ margin: '0 0 8px' }}>
         Se generan solas en cada actualización: caída desde tu costo de compra (revisar / vender), cambios de señal y
-        precios que dejan de llegar. Telegram y email se activan con las variables de .env (ver README).
+        precios que dejan de llegar.{' '}
+        {LOCAL_MODE
+          ? 'Las importantes llegan como notificación mientras la app está abierta o en segundo plano reciente.'
+          : 'Telegram y email se activan con las variables de .env (ver README).'}
       </p>
       {!data && <p className="muted">Cargando…</p>}
       {data && data.alerts.length === 0 && <p className="muted">No hay alertas.</p>}

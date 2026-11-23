@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api } from './api'
+import { api, LOCAL_MODE } from './api'
 import { AlertsView } from './components/AlertsView'
 import { ContributionCard } from './components/ContributionCard'
 import { Detail } from './components/Detail'
@@ -113,7 +113,7 @@ export function App() {
 
   const tz = status.data?.timezone ?? 'America/Santiago'
   const cycleTime = status.data?.last_cycle
-  const offline = status.error && !status.data
+  const offline = status.error && !status.data && !LOCAL_MODE
   const nextTheme: Record<Theme, Theme> = { system: 'dark', dark: 'light', light: 'system' }
   const themeLabel: Record<Theme, string> = { system: 'Tema: sistema', dark: 'Tema: oscuro', light: 'Tema: claro' }
   const quote = quotes.data?.find((q) => q.symbol === selected)
