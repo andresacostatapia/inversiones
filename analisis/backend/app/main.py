@@ -19,6 +19,8 @@ from .db import make_engine, make_session_factory
 from .market_data import MarketData
 from .providers.fx import FxService, build_fx_service
 from .providers.router import ProviderRouter, build_router
+from .alerts import AlertEngine, Notifier
+from .portfolio_service import PortfolioService
 from .scheduler import Poller
 from .signal_service import SignalService
 
@@ -34,6 +36,7 @@ def create_app(
     fx: FxService | None = None,
     db_path: str | None = None,
     start_poller: bool = True,
+    notifier: Notifier | None = None,
 ) -> FastAPI:
     cfg = cfg or get_config()
     provider_router = provider_router or build_router(cfg, get_secrets())
@@ -43,7 +46,10 @@ def create_app(
     md = MarketData(cfg, make_session_factory(engine), provider_router, fx)
     md.startup()
     signals = SignalService(md)
-    poller = Poller(md, signals)
+    portfolio = PortfolioService(md, signals)
+    notifier = notifier or Notifier(get_secrets(), cfg.alerts.channels)
+    alerts = AlertEngine(md, portfolio, notifier, cfg)
+    poller = Poller(md, signals, alerts)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -54,6 +60,7 @@ def create_app(
 
     app = FastAPI(title="Análisis de acciones y ETF", description=DISCLAIMER, lifespan=lifespan)
     app.state.md, app.state.poller, app.state.signals = md, poller, signals
+    app.state.portfolio, app.state.alerts = portfolio, alerts
     # El dashboard (fase 3) corre en otro puerto durante el desarrollo.
     app.add_middleware(
         CORSMiddleware,

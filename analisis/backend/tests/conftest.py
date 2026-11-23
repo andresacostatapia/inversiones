@@ -65,7 +65,7 @@ class FakeProvider:
     def get_history(self, symbol, start=None, end=None):
         self.calls.append(("history", symbol))
         self._check(symbol)
-        df = make_bars(300, seed=len(symbol))
+        df = make_bars(300, seed=len(symbol), base=950.0 if symbol == "CLP=X" else 100.0)
         df.index = pd.bdate_range(end="2026-11-20", periods=len(df), name="date")  # termina la sesión anterior
         if start is not None:
             df = df[df.index >= pd.Timestamp(start).tz_localize(None).normalize() - timedelta(days=0)]

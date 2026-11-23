@@ -64,3 +64,31 @@ export function signClass(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v) || v === 0) return ''
   return v > 0 ? 'gain' : 'loss'
 }
+
+/** Lee números escritos a mano: "1.234,56", "1,234.56", "262,10", "48.500" (miles chilenos), "1234.5". */
+export function parseNum(raw: string): number | null {
+  let s = raw.trim().replace(/[^\d.,-]/g, '')
+  if (!s || !/\d/.test(s)) return null
+  const lastDot = s.lastIndexOf('.')
+  const lastComma = s.lastIndexOf(',')
+  if (lastDot >= 0 && lastComma >= 0) {
+    s = lastComma > lastDot ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '')
+  } else if (lastComma >= 0) {
+    s = /^-?\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, '') : s.replace(',', '.')
+  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) {
+    s = s.replace(/\./g, '')
+  }
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
+}
+
+export function todayISO(tz = 'America/Santiago'): string {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: tz })
+}
+
+export function clp(v: number | null | undefined, signed = false): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—'
+  const s = nf(0, 0).format(Math.abs(v))
+  const sign = v < 0 ? '-' : signed && v > 0 ? '+' : ''
+  return `${sign}$ ${s}`
+}

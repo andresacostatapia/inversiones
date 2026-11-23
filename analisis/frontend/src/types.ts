@@ -180,3 +180,135 @@ export interface BacktestResult {
   strategies: BtStrategy[]
   warning: string
 }
+
+// --- Fase 4 ---
+
+export interface Transaction {
+  id: number
+  symbol: string
+  side: 'compra' | 'venta'
+  quantity: number
+  price: number
+  currency: string
+  date: string
+  fee: number
+  fx_rate: number
+  fx_source: 'manual' | 'historico' | 'actual'
+  note: string | null
+  total: number
+}
+
+export type RiskStatus = 'ok' | 'revisar' | 'vender' | 'sin_precio'
+
+export interface PositionRow {
+  symbol: string
+  name: string | null
+  market: 'CL' | 'US'
+  bucket: 'CL' | 'INTL'
+  currency: string
+  quantity: number
+  avg_cost: number | null
+  price: number | null
+  freshness: Freshness | null
+  first_buy: string | null
+  cost_native: number
+  cost_clp: number
+  realized_clp: number
+  value_native: number | null
+  value_clp: number | null
+  unrealized_clp: number | null
+  unrealized_pct: number | null
+  drawdown_pct: number | null
+  price_effect_clp: number | null
+  fx_effect_clp: number | null
+  day_change_clp: number | null
+  weight_pct: number | null
+  status: RiskStatus
+}
+
+export interface Allocation {
+  bucket: 'CL' | 'INTL'
+  name: string
+  value_clp: number
+  pct: number
+  target_pct: number
+  diff_pct: number
+}
+
+export interface Portfolio {
+  disclaimer: string
+  positions: PositionRow[]
+  closed: { symbol: string; currency: string; realized_native: number; realized_clp: number }[]
+  totals: {
+    value_clp: number
+    value_usd: number | null
+    cost_clp: number
+    unrealized_clp: number
+    unrealized_pct: number | null
+    realized_clp: number
+    day_change_clp: number
+  }
+  allocation: Allocation[]
+  fx_now: number | null
+  fx: QuoteView
+  missing_prices: string[]
+  thresholds: { review_pct: number; sell_pct: number }
+  monthly_contribution_clp: number
+}
+
+export interface ContributionResult {
+  amount_clp: number
+  fx: number
+  portfolio_value_clp: number
+  buckets: { bucket: string; name: string; current_clp: number; current_pct: number; target_pct: number; amount_clp: number; after_pct: number }[]
+  lines: { symbol: string; name: string | null; signal: Label | null; quantity: number; price_native: number; currency: string; amount_clp: number; reason: string }[]
+  unallocated_clp: number
+  excluded: { symbol: string; signal: Label | null; reason: string }[]
+  notes: string[]
+}
+
+export interface ImportRow {
+  line: number
+  raw: string[]
+  status: 'lista' | 'duplicada' | 'error' | 'importada'
+  error: string | null
+  symbol?: string
+  side?: string
+  quantity?: number
+  price?: number
+  date?: string
+  fee?: number
+}
+
+export interface ImportResult {
+  rows: ImportRow[]
+  ready: number
+  duplicates: number
+  errors: number
+  consistency_error: string | null
+  imported: number
+}
+
+export type Severity = 'info' | 'warning' | 'critical'
+
+export interface AlertItem {
+  id: number
+  kind: 'revision' | 'venta' | 'senal' | 'datos' | 'prueba'
+  severity: Severity
+  symbol: string | null
+  title: string
+  message: string
+  value: number | null
+  created_at: string
+  resolved_at: string | null
+  read: boolean
+  notified: string[]
+  notify_error: string | null
+}
+
+export interface AlertsResponse {
+  alerts: AlertItem[]
+  unread: number
+  by_severity: Partial<Record<Severity, number>>
+  channels: { telegram: boolean; email: boolean }
+}

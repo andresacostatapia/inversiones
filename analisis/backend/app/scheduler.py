@@ -35,9 +35,11 @@ def due_symbols(
 
 
 class Poller:
-    def __init__(self, md: MarketData, signals=None):
+    def __init__(self, md: MarketData, signals=None, alerts=None):
         self.md = md
         self.signals = signals  # SignalService (opcional): recalcula señales tras cada actualización
+        self.alerts = alerts    # AlertEngine (opcional): evalúa alertas al final de cada ciclo
+        self.fx_history_checked = False
         self.cfg = md.cfg.data
         self.last_history: dict[str, datetime] = {}
         self.was_open: dict[str, bool] = {}
@@ -82,10 +84,26 @@ class Poller:
                     signals_done.append(sym)
                 except Exception as e:
                     log.warning("señal de %s: %s", sym, e)
+        # Serie diaria del dólar (para valorizar compras pasadas): una vez, si falta.
+        if not self.fx_history_checked:
+            try:
+                if self.md.fx_history_days() < 200:
+                    self.md.refresh_fx_history()
+                self.fx_history_checked = True
+            except Exception as e:
+                log.warning("historia del dólar: %s", e)
+
+        new_alerts = []
+        if self.alerts is not None:
+            try:
+                new_alerts = self.alerts.evaluate(now)
+            except Exception as e:
+                log.exception("evaluación de alertas: %s", e)
         for market in {market_of(s) for s in symbols}:
             self.was_open[market] = is_open(market, now)
         self.last_cycle = now
-        return {"quotes": results, "fx": fx_due, "history": history_done, "signals": signals_done}
+        return {"quotes": results, "fx": fx_due, "history": history_done, "signals": signals_done,
+                "alerts": [a["title"] for a in new_alerts]}
 
     async def run(self) -> None:
         while True:

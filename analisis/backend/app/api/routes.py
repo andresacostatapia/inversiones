@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from datetime import date as date_type
 from typing import Literal
 from datetime import datetime, timedelta, timezone
 
@@ -15,6 +16,9 @@ from ..market_data import InvalidSymbol, MarketData, normalize_symbol
 from ..market_hours import session_info
 from ..providers.base import SymbolNotFound
 from ..providers.fx import PAIR
+from ..alerts import AlertEngine
+from ..portfolio import InvalidTransaction
+from ..portfolio_service import PortfolioService, TxIn
 from ..signal_service import NoHistory, SignalService
 from ..strategies import STRATEGIES
 
@@ -232,3 +236,112 @@ async def backtest(body: BacktestIn, request: Request):
         raise HTTPException(404, f"{e}. Agrégalo a la watchlist para descargar su historia.")
     except ValueError as e:
         raise HTTPException(422, str(e))
+
+
+# --- Fase 4: cartera, aportes y alertas ---------------------------------------------
+
+def pf(request: Request) -> PortfolioService:
+    return request.app.state.portfolio
+
+
+def alerts_engine(request: Request) -> AlertEngine:
+    return request.app.state.alerts
+
+
+class TransactionIn(BaseModel):
+    symbol: str
+    side: Literal["compra", "venta"]
+    quantity: float = Field(gt=0)
+    price: float = Field(gt=0, description="Precio por acción, en la moneda del instrumento")
+    date: date_type
+    fee: float = Field(0, ge=0, description="Comisión + impuestos, en la moneda del instrumento")
+    fx_rate: float | None = Field(None, gt=0, description="CLP por USD; si se omite, el de esa fecha")
+    note: str | None = Field(None, max_length=500)
+
+
+@router.get("/transactions")
+def list_transactions(request: Request):
+    return pf(request).transactions()
+
+
+@router.post("/transactions", status_code=201)
+async def add_transaction(body: TransactionIn, request: Request):
+    try:
+        return await asyncio.to_thread(pf(request).add_transaction, TxIn(**body.model_dump()))
+    except (InvalidTransaction, InvalidSymbol) as e:
+        raise HTTPException(422, str(e))
+    except SymbolNotFound as e:
+        raise HTTPException(404, f"No hay datos para {body.symbol.upper()}: {e}")
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo validar el símbolo con el proveedor: {e}")
+
+
+@router.delete("/transactions/{tx_id}")
+def delete_transaction(tx_id: int, request: Request):
+    try:
+        if not pf(request).delete_transaction(tx_id):
+            raise HTTPException(404, "Operación no encontrada")
+    except InvalidTransaction as e:
+        raise HTTPException(422, str(e))
+    return {"deleted": tx_id}
+
+
+class ImportIn(BaseModel):
+    csv: str = Field(max_length=2_000_000)
+    commit: bool = False
+
+
+@router.post("/transactions/import")
+async def import_transactions(body: ImportIn, request: Request):
+    try:
+        return await asyncio.to_thread(pf(request).import_csv, body.csv, body.commit)
+    except InvalidTransaction as e:
+        raise HTTPException(422, str(e))
+
+
+@router.get("/portfolio")
+def portfolio(request: Request):
+    try:
+        return {"disclaimer": DISCLAIMER, **pf(request).portfolio()}
+    except InvalidTransaction as e:
+        raise HTTPException(409, f"Las operaciones registradas no cuadran: {e}")
+
+
+class ContributionIn(BaseModel):
+    amount_clp: float | None = Field(None, gt=0, le=1e12)
+
+
+@router.post("/contribution")
+def contribution(body: ContributionIn, request: Request):
+    try:
+        return {"disclaimer": DISCLAIMER, **pf(request).contribution(body.amount_clp)}
+    except (ValueError, InvalidTransaction) as e:
+        raise HTTPException(422, str(e))
+
+
+@router.get("/alerts")
+def list_alerts(request: Request, unread: bool = False, limit: int = 100):
+    eng = alerts_engine(request)
+    return {"alerts": eng.list(unread, min(max(limit, 1), 500)), **eng.counts(),
+            "channels": eng.notifier.configured()}
+
+
+@router.post("/alerts/{alert_id}/read")
+def read_alert(alert_id: int, request: Request):
+    return {"updated": alerts_engine(request).mark_read(alert_id)}
+
+
+@router.post("/alerts/read-all")
+def read_all_alerts(request: Request):
+    return {"updated": alerts_engine(request).mark_read()}
+
+
+@router.post("/alerts/test")
+async def test_alert(request: Request):
+    return await asyncio.to_thread(alerts_engine(request).test)
+
+
+@router.get("/profile")
+def profile(request: Request):
+    """Perfil de riesgo vigente (config.yaml)."""
+    return md(request).cfg.risk_profile.model_dump()

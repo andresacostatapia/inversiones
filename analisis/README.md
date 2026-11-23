@@ -15,7 +15,7 @@ Es independiente de la PWA que está en la raíz del repositorio: no comparte c�
 | 1 | Datos (proveedores intercambiables, dólar, SQLite, actualización periódica) + indicadores | ✅ |
 | 2 | Motor de señales + backtest | ✅ |
 | 3 | Dashboard web (React) | ✅ |
-| 4 | Cartera, aportes y alertas | pendiente |
+| 4 | Cartera, aportes y alertas | ✅ |
 
 ## Instalación
 
@@ -56,7 +56,9 @@ Todo lo editable está en [`config.yaml`](config.yaml):
 - `data.rate_limits`: límite de consultas por proveedor. Ajústalo si tienes un plan pagado.
 - `signals`: umbrales de COMPRAR/VENDER, peso de cada estrategia y efecto del volumen.
 - `backtest`: comisión y deslizamiento por operación.
-- `risk_profile`: se usa en la fase 4.
+- `risk_profile`: distribución objetivo (30 % Chile / 70 % internacional), umbrales de alerta −20 % y −25 %,
+  aporte mensual por defecto y si tu broker permite fracciones de acción.
+- `alerts`: qué alertas se generan y desde qué gravedad se envían por Telegram o email.
 
 Símbolos: los de Santiago llevan el sufijo `.SN` (`SQM-B.SN`, `CHILE.SN`, `FALABELLA.SN`); los de EE.UU. van tal cual
 (`SPY`, `VOO`, `EEM`, `VWO`).
@@ -126,6 +128,14 @@ los precios cada 60 s mientras su mercado esté abierto (los feriados se respeta
 | GET | `/api/signals/{symbol}` | Señal con detalle por estrategia, razones, confianza, señal anterior |
 | GET | `/api/signals/{symbol}/history?period=1y` | Puntaje diario de cada estrategia y del combinado |
 | POST | `/api/backtest` | Backtest (ver abajo) |
+| GET / POST | `/api/transactions` | Operaciones registradas / registrar una |
+| DELETE | `/api/transactions/{id}` | Borrar una operación |
+| POST | `/api/transactions/import` `{"csv": "...", "commit": false}` | Vista previa (o importación) del CSV de la PWA |
+| GET | `/api/portfolio` | Posiciones, totales en CLP/USD, distribución vs objetivo |
+| POST | `/api/contribution` `{"amount_clp": 500000}` | Reparto sugerido del aporte |
+| GET | `/api/alerts` | Alertas, no leídas y canales configurados |
+| POST | `/api/alerts/{id}/read`, `/api/alerts/read-all`, `/api/alerts/test` | Marcar leídas / probar notificaciones |
+| GET | `/api/profile` | Perfil de riesgo vigente |
 
 ### Frescura del dato
 
@@ -178,6 +188,68 @@ cd analisis/backend && uvicorn app.main:app --reload
 cd analisis/frontend && npm run dev    # http://127.0.0.1:5173, recarga al guardar; /api va al puerto 8000
 npm test                               # tests del formato de números
 ```
+
+## Cartera
+
+En la pestaña **Cartera**:
+
+- **Registro de operaciones**: fecha, compra/venta, símbolo, cantidad, precio por acción y comisión en la moneda
+  del activo, dólar opcional y nota. Se aceptan números en formato chileno («48.500», «650,5»).
+  - Si el símbolo no está en la watchlist, se valida con el proveedor y se agrega (para tener precio y señal).
+  - No se puede vender más de lo que tienes, registrar fechas futuras ni borrar una compra que respalda una venta posterior.
+  - El dólar (CLP por USD) de cada operación se toma de la serie diaria de esa fecha. También puedes ingresarlo a mano;
+    si no hay dato de esa fecha se usa el de hoy, marcado con `*`.
+- **Importar desde la PWA**: en la PWA, Historial → Exportar CSV, y aquí se sube el archivo.
+  - Muestra una vista previa con filas listas, duplicadas y con error, y solo guarda al confirmar.
+  - Los activos en CLP sin sufijo reciben `.SN` (SQM-B → SQM-B.SN).
+  - Detecta duplicados por fecha, símbolo, tipo, cantidad y precio, así que se puede volver a importar sin repetir.
+- **Resumen**: valor total en CLP y USD, ganancia no realizada y realizada, variación de hoy y costo.
+  La **distribución Chile / Internacional** se compara con el objetivo.
+- **Posiciones**: cantidad, costo promedio, precio con su hora, valor en CLP y ganancia en CLP. En las posiciones en
+  USD, la ganancia se separa en **efecto precio** y **efecto dólar**. También muestra la caída desde tu costo
+  promedio, el estado (✓ OK / ⚠ Revisar / ⛔ Vender) y el peso en la cartera.
+
+Cálculos (ver [`backend/app/portfolio.py`](backend/app/portfolio.py)):
+- Costo promedio ponderado con comisiones.
+- Ganancia realizada = ingreso neto − costo promedio vendido.
+- El costo en CLP usa el dólar de cada compra; el valor actual, el de hoy.
+- La caída para las alertas se mide en la moneda del activo (precio actual / costo promedio − 1). Así mide al activo y no al dólar.
+
+### Reparto del aporte mensual
+
+Ingresas un monto en CLP (por defecto `risk_profile.monthly_contribution_clp`) y la app sugiere qué comprar:
+
+1. **Entre mercados**: calcula cuánto le falta a Chile y a internacional para llegar al 30/70 *después* del aporte, y
+   reparte en proporción a esos faltantes. Si estás muy cargado a un lado, todo va al otro.
+2. **Dentro de cada mercado**: entre lo que tienes o vigilas. COMPRAR pesa el doble que MANTENER. Se excluyen:
+   - los símbolos con señal VENDER o sin historia suficiente;
+   - **las posiciones bajo el umbral de venta**, porque las reglas de riesgo mandan sobre la señal técnica y no se
+     promedia a la baja algo que tu perfil dice considerar vender.
+
+   Las que están en revisión reciben aporte, pero marcadas con ⚠.
+3. **Acciones enteras** en Chile (fracciones en EE.UU. si `fractional_shares.US: true`). Lo que sobra compra una acción
+   más de lo que quedó más lejos de su monto, y el resto se informa como «sin invertir».
+
+Nunca sugiere vender para rebalancear y no incluye comisiones del broker.
+
+## Alertas
+
+Se evalúan solas al final de cada ciclo de actualización y se ven en la pestaña **Alertas**: un contador en la
+pestaña y un aviso arriba si hay alguna crítica sin leer.
+
+| Alerta | Gravedad | Cuándo |
+|---|---|---|
+| ⛔ Venta | crítica | Una posición cae −25 % o más desde tu costo promedio |
+| ⚠ Revisión | atención | Cae entre −20 % y −25 % |
+| Cambio de señal | atención (a COMPRAR o VENDER) / info (a MANTENER) | La señal de hoy difiere de la del día anterior; si el mercado está abierto se marca provisional |
+| Datos | info | Con el mercado abierto, un precio lleva más de 30 min sin llegar |
+
+- Las de caída y datos se crean **una vez** mientras la condición se cumple. Se marcan «resueltas» si el precio se
+  recupera, y si vuelve a caer se crea una nueva.
+- Las de señal se generan una por símbolo, día y etiqueta.
+- **Telegram y email** son opcionales. Para usarlos, completa las variables de `.env` (instrucciones en
+  [`.env.example`](.env.example)) y reinicia. Por defecto solo se envían las de gravedad «atención» o mayor; se
+  ajusta en `alerts.notify_min_severity`. El botón **Enviar prueba** verifica la configuración.
 
 ## Indicadores
 
@@ -296,7 +368,8 @@ analisis/
 │   └── src/
 │       ├── App.tsx        estructura, barra superior, polling
 │       ├── api.ts         cliente de la API
-│       └── components/    Watchlist, SignalCard, PriceChart, ScoreChart, Metrics, BacktestPanel
+│       └── components/    Watchlist, SignalCard, PriceChart, ScoreChart, Metrics, BacktestPanel,
+│                          PortfolioView, ContributionCard, TransactionsCard, AlertsView
 └── backend/
     ├── app/
     │   ├── main.py        FastAPI + actualización periódica
@@ -311,6 +384,9 @@ analisis/
     │   ├── signals.py     combinación, confianza, razones
     │   ├── signal_service.py  señales desde SQLite + backtest
     │   ├── backtest.py
+    │   ├── portfolio.py   posiciones, valorización CLP/USD, reparto de aportes (funciones puras)
+    │   ├── portfolio_service.py  operaciones en SQLite, importación del CSV de la PWA
+    │   ├── alerts.py      reglas de alerta, Telegram y email
     │   ├── api/routes.py
     │   └── providers/     base, yfinance, finnhub, twelvedata, alphavantage, fx, router
     └── tests/

@@ -88,6 +88,41 @@ class SignalRow(Base):
     payload: Mapped[str] = mapped_column(Text)  # SignalResult completo en JSON
 
 
+class Transaction(Base):
+    """Operación registrada a mano (o importada). Las posiciones se calculan desde aquí."""
+
+    __tablename__ = "transactions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(24), index=True)
+    side: Mapped[str] = mapped_column(String(6))          # compra / venta
+    quantity: Mapped[float] = mapped_column(Float)
+    price: Mapped[float] = mapped_column(Float)            # en la moneda del instrumento
+    currency: Mapped[str] = mapped_column(String(8))
+    date: Mapped[date] = mapped_column(Date)
+    fee: Mapped[float] = mapped_column(Float, default=0)   # comisión + impuestos, en la misma moneda
+    fx_rate: Mapped[float] = mapped_column(Float)          # CLP por 1 USD en la fecha de la operación
+    fx_source: Mapped[str] = mapped_column(String(20))     # manual / historico / actual
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AlertRow(Base):
+    __tablename__ = "alerts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(120), index=True)   # evita repetir la misma alerta
+    kind: Mapped[str] = mapped_column(String(20))       # revision / venta / senal / datos / prueba
+    severity: Mapped[str] = mapped_column(String(10))   # info / warning / critical
+    symbol: Mapped[str | None] = mapped_column(String(24))
+    title: Mapped[str] = mapped_column(String(200))
+    message: Mapped[str] = mapped_column(Text)
+    value: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # la condición dejó de cumplirse
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notified: Mapped[str | None] = mapped_column(String(60))     # canales externos que la recibieron
+    notify_error: Mapped[str | None] = mapped_column(Text)
+
+
 def make_engine(path: Path | str):
     url = "sqlite://" if str(path) == ":memory:" else f"sqlite:///{path}"
     if str(path) != ":memory:":

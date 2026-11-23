@@ -58,14 +58,21 @@ backtest:
   slippage_pct: 0.0                 # deslizamiento por operación
   default_years: 10
 
-# --- Perfil de riesgo (fase 4) ---
+# --- Perfil de riesgo y cartera ---
 risk_profile:
   horizon_months: [6, 12]
-  allow_leverage: false
-  allow_derivatives: false
-  allow_short: false
-  target_allocation: {CL: 0.30, INTL: 0.70}
-  review_drawdown_pct: -20          # alerta de revisión desde el precio de compra
-  sell_drawdown_pct: -25            # alerta de venta desde el precio de compra
-  monthly_contribution_clp: 0
-  fractional_shares: {CL: false, US: true}
+  allow_leverage: false             # la app nunca sugiere apalancamiento,
+  allow_derivatives: false          # derivados
+  allow_short: false                # ni ventas en corto
+  target_allocation: {CL: 0.30, INTL: 0.70}   # CL = Bolsa de Santiago, INTL = internacional
+  review_drawdown_pct: -20          # alerta de revisión: caída desde tu costo promedio de compra
+  sell_drawdown_pct: -25            # alerta de venta
+  monthly_contribution_clp: 500000  # aporte mensual por defecto (se puede cambiar en la UI)
+  fractional_shares: {CL: false, US: true}    # ¿tu broker permite fracciones de acción?
+
+# --- Alertas ---
+alerts:
+  signal_changes: true              # avisar cuando cambia la señal de un símbolo
+  data_error_minutes: 30            # avisar si un precio lleva este tiempo fallando con el mercado abierto
+  channels: [telegram, email]       # además de la UI; solo se usan si sus credenciales están en .env
+  notify_min_severity: warning      # info / warning / critical: desde qué gravedad se envía por Telegram o email

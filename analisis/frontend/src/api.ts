@@ -1,4 +1,18 @@
-import type { BacktestResult, Bar, IndicatorsResponse, QuoteView, ScorePoint, Signal, Status } from './types'
+import type {
+  AlertItem,
+  AlertsResponse,
+  BacktestResult,
+  Bar,
+  ContributionResult,
+  ImportResult,
+  IndicatorsResponse,
+  Portfolio,
+  QuoteView,
+  ScorePoint,
+  Signal,
+  Status,
+  Transaction,
+} from './types'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -48,4 +62,32 @@ export const api = {
   backtest: (body: { symbol: string; years: number; commission_pct: number }) =>
     request<BacktestResult>('/backtest', { method: 'POST', body: JSON.stringify(body) }),
   refresh: () => request<unknown>('/refresh', { method: 'POST' }),
+
+  // Cartera
+  portfolio: () => request<Portfolio>('/portfolio'),
+  transactions: () => request<Transaction[]>('/transactions'),
+  addTransaction: (t: NewTransaction) => request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(t) }),
+  deleteTransaction: (id: number) => request<{ deleted: number }>(`/transactions/${id}`, { method: 'DELETE' }),
+  importCsv: (csv: string, commit: boolean) =>
+    request<ImportResult>('/transactions/import', { method: 'POST', body: JSON.stringify({ csv, commit }) }),
+  contribution: (amount_clp: number) =>
+    request<ContributionResult>('/contribution', { method: 'POST', body: JSON.stringify({ amount_clp }) }),
+
+  // Alertas
+  alerts: () => request<AlertsResponse>('/alerts'),
+  readAlert: (id: number) => request<unknown>(`/alerts/${id}/read`, { method: 'POST' }),
+  readAllAlerts: () => request<unknown>('/alerts/read-all', { method: 'POST' }),
+  testAlert: () => request<{ alert: AlertItem; sent: string[]; errors: string[]; channels: Record<string, boolean> }>(
+    '/alerts/test', { method: 'POST' }),
+}
+
+export interface NewTransaction {
+  symbol: string
+  side: 'compra' | 'venta'
+  quantity: number
+  price: number
+  date: string
+  fee: number
+  fx_rate: number | null
+  note: string | null
 }

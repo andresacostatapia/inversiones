@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -77,6 +76,26 @@ class BacktestConfig(BaseModel):
     default_years: int = 10
 
 
+class RiskProfile(BaseModel):
+    horizon_months: list[int] = Field(default_factory=lambda: [6, 12])
+    allow_leverage: bool = False
+    allow_derivatives: bool = False
+    allow_short: bool = False
+    # Distribución objetivo por mercado: CL = Bolsa de Santiago, INTL = el resto.
+    target_allocation: dict[str, float] = Field(default_factory=lambda: {"CL": 0.30, "INTL": 0.70})
+    review_drawdown_pct: float = -20   # alerta de revisión: caída desde el costo promedio de compra
+    sell_drawdown_pct: float = -25     # alerta de venta
+    monthly_contribution_clp: float = 0
+    fractional_shares: dict[str, bool] = Field(default_factory=lambda: {"CL": False, "US": True})
+
+
+class AlertsConfig(BaseModel):
+    signal_changes: bool = True        # avisar cuando cambia la señal de un símbolo de la watchlist
+    data_error_minutes: int = 30       # con el mercado abierto, avisar si un precio lleva este tiempo fallando
+    channels: list[str] = Field(default_factory=lambda: ["telegram", "email"])  # además de la UI, si hay credenciales
+    notify_min_severity: str = "warning"  # info / warning / critical: desde qué gravedad se envía afuera
+
+
 class GeneralConfig(BaseModel):
     timezone: str = "America/Santiago"
     base_currency: str = "CLP"
@@ -89,8 +108,8 @@ class AppConfig(BaseModel):
     data: DataConfig = Field(default_factory=DataConfig)
     signals: SignalsConfig = Field(default_factory=SignalsConfig)
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)
-    # Sección de la fase 4: se guarda tal cual y se valida en su fase.
-    risk_profile: dict[str, Any] = Field(default_factory=dict)
+    risk_profile: RiskProfile = Field(default_factory=RiskProfile)
+    alerts: AlertsConfig = Field(default_factory=AlertsConfig)
 
     @property
     def database_path(self) -> Path:

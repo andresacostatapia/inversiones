@@ -275,6 +275,10 @@ class MarketData:
             s.commit()
         return len(rows)
 
+    def fx_history_days(self) -> int:
+        with self.Session() as s:
+            return s.scalar(select(func.count()).select_from(FxRateRow).where(FxRateRow.pair == PAIR)) or 0
+
     def fx_on(self, d: date) -> float | None:
         """Dólar de una fecha (o el último disponible antes de ella)."""
         with self.Session() as s:

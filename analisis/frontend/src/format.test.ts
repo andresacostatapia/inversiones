@@ -27,3 +27,23 @@ describe('formato chileno', () => {
     expect(signClass(0)).toBe('')
   })
 })
+
+import { clp, parseNum } from './format'
+
+describe('lectura de números escritos a mano', () => {
+  it.each([
+    ['48.500', 48500],
+    ['1.234,56', 1234.56],
+    ['1,234.56', 1234.56],
+    ['262,10', 262.1],
+    ['650.5', 650.5],
+    ['$ 1.000.000', 1000000],
+    ['abc', null],
+  ])('%s → %s', (raw, expected) => {
+    expect(parseNum(raw)).toBe(expected)
+  })
+  it('formatea CLP con signo', () => {
+    expect(clp(-1234567.4)).toBe('-$ 1.234.567')
+    expect(clp(500, true)).toBe('+$ 500')
+  })
+})
