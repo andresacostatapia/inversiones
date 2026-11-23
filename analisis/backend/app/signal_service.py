@@ -25,6 +25,18 @@ class NoHistory(LookupError):
     pass
 
 
+def find_gaps(bars: pd.DataFrame, within_days: int = 365, min_gap_days: int = 10) -> list[tuple[date, date]]:
+    """Huecos de más de `min_gap_days` días corridos entre velas, dentro del último año."""
+    if len(bars) < 2:
+        return []
+    idx = bars.index[bars.index >= bars.index[-1] - pd.Timedelta(days=within_days)]
+    out = []
+    for a, b in zip(idx[:-1], idx[1:]):
+        if (b - a).days > min_gap_days:
+            out.append((a.date(), b.date()))
+    return out
+
+
 class SignalService:
     def __init__(self, md: MarketData):
         self.md = md
@@ -45,6 +57,11 @@ class SignalService:
             df.index[-1].date() >= _session_date_of(quote)
         res = evaluate(symbol, df, self.cfg.signals, provisional=provisional, stale=kind == "desactualizado",
                        frame=score_frame(df, self.cfg.signals, provisional_last=provisional))
+        for a, b in find_gaps(bars):
+            res.warnings.append(
+                f"Faltan datos reales entre el {a:%d/%m/%Y} y el {b:%d/%m/%Y} (el proveedor no informó precios): "
+                "las medias y el backtest de ese tramo son menos confiables"
+            )
         out = res.to_dict()
         out["price"] = {k: quote[k] for k in ("price", "currency", "change_pct", "freshness")}
         out["previous"] = self._previous(symbol, res.date)

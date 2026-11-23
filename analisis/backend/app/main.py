@@ -1,7 +1,7 @@
 """Punto de entrada de la API.
 
     cd analisis/backend
-    uvicorn app.main:app --reload            # http://127.0.0.1:8000/docs
+    uvicorn app.main:app --reload            # http://127.0.0.1:8000 (dashboard) y /docs (API)
 """
 
 from __future__ import annotations
@@ -11,15 +11,19 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .api.routes import DISCLAIMER, router
-from .config import AppConfig, get_config, get_secrets
+from .config import ROOT_DIR, AppConfig, get_config, get_secrets
 from .db import make_engine, make_session_factory
 from .market_data import MarketData
 from .providers.fx import FxService, build_fx_service
 from .providers.router import ProviderRouter, build_router
 from .scheduler import Poller
 from .signal_service import SignalService
+
+# Dashboard compilado (cd analisis/frontend && npm run build). Si existe, se sirve en la raíz.
+FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -37,7 +41,7 @@ def create_app(
     fx = fx or build_fx_service(cfg.data.fx.sources, yf)
     engine = make_engine(db_path or cfg.database_path)
     md = MarketData(cfg, make_session_factory(engine), provider_router, fx)
-    md.seed_watchlist()
+    md.startup()
     signals = SignalService(md)
     poller = Poller(md, signals)
 
@@ -58,6 +62,8 @@ def create_app(
         allow_headers=["*"],
     )
     app.include_router(router)
+    if FRONTEND_DIST.is_dir():
+        app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="dashboard")
     return app
 
 

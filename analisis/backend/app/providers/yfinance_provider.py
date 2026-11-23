@@ -11,7 +11,16 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from .base import Capabilities, ProviderError, Quote, RateLimited, SymbolNotFound, normalize_history
+from .base import (
+    Capabilities,
+    ProviderError,
+    Quote,
+    RateLimited,
+    SymbolNotFound,
+    drop_placeholder_bars,
+    market_of,
+    normalize_history,
+)
 
 try:  # las excepciones cambian de nombre entre versiones de yfinance
     from yfinance.exceptions import YFRateLimitError
@@ -108,5 +117,6 @@ class YFinanceProvider:
             raw, _ = self._history(symbol, period="max")
         else:
             raw, _ = self._history(symbol, start=start, end=end)
-        return normalize_history(raw)
+        bars = normalize_history(raw)
+        return bars if market_of(symbol) == "FX" else drop_placeholder_bars(bars)
 

@@ -109,7 +109,7 @@ def cmd_refresh(args, cfg, router) -> int:
 
     md = MarketData(cfg, make_session_factory(make_engine(cfg.database_path)), router,
                     build_fx_service(cfg.data.fx.sources, router.providers.get("yfinance")))
-    md.seed_watchlist()
+    md.startup()
     sigs = SignalService(md)
     res = Poller(md, sigs).cycle()
     print(f"Base de datos: {cfg.database_path}")

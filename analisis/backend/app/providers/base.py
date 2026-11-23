@@ -161,3 +161,17 @@ def normalize_history(df: pd.DataFrame) -> pd.DataFrame:
     out.index.name = "date"
     out = out[~out.index.duplicated(keep="last")].sort_index()
     return out.dropna(subset=["close"])
+
+
+def drop_placeholder_bars(df: pd.DataFrame) -> pd.DataFrame:
+    """Quita velas de relleno: volumen 0 y apertura = máximo = mínimo = cierre.
+
+    Yahoo a veces "rellena" semanas sin datos reales de una acción repitiendo el último precio con volumen 0
+    (visto en SQM-B.SN, FALABELLA.SN y CHILE.SN en 2026). Esas filas aplanan las medias, llevan el ATR a 0
+    y falsean el backtest, así que se descartan: es preferible un hueco visible a un precio inventado.
+    No aplicar a divisas, que no informan volumen.
+    """
+    if df.empty:
+        return df
+    flat = (df["open"] == df["high"]) & (df["high"] == df["low"]) & (df["low"] == df["close"])
+    return df[~(flat & (df["volume"].fillna(0) == 0))]

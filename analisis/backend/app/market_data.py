@@ -58,6 +58,10 @@ class MarketData:
         self.last_refresh: dict[str, datetime] = {}
 
     # --- watchlist ----------------------------------------------------------
+    def startup(self) -> None:
+        self.seed_watchlist()
+        self.purge_placeholder_bars()
+
     def seed_watchlist(self) -> None:
         """La primera vez, copia la watchlist de config.yaml a la base de datos."""
         with self.Session() as s:
@@ -207,6 +211,21 @@ class MarketData:
                 s.execute(stmt, rows[i : i + 500])
             s.commit()
         return len(rows)
+
+    def purge_placeholder_bars(self) -> int:
+        """Borra velas de relleno ya guardadas (ver providers.base.drop_placeholder_bars)."""
+        with self.Session() as s:
+            n = s.execute(
+                delete(PriceBar).where(
+                    PriceBar.volume == 0, PriceBar.open == PriceBar.high, PriceBar.high == PriceBar.low,
+                    PriceBar.low == PriceBar.close, PriceBar.source.not_like(f"%{LIVE_SUFFIX}"),
+                    PriceBar.symbol.not_like("%=X"),
+                )
+            ).rowcount
+            s.commit()
+        if n:
+            log.info("se descartaron %d velas de relleno (volumen 0, precio plano)", n)
+        return n
 
     def bars(self, symbol: str, start: date | None = None) -> pd.DataFrame:
         with self.Session() as s:

@@ -194,3 +194,22 @@ def test_mindicador_and_fallback():
     assert svc.latest() is fx and "mindicador" in svc.last_errors
     with pytest.raises(ProviderError):
         FxService([Down()]).latest()
+
+
+def test_drop_placeholder_bars():
+    from app.providers.base import drop_placeholder_bars
+
+    idx = pd.bdate_range("2026-07-01", periods=4)
+    df = pd.DataFrame({"open": [10, 9, 9, 9], "high": [11, 9, 9, 9.5], "low": [9, 9, 9, 8.9], "close": [10, 9, 9, 9.2],
+                       "volume": [100, 0, 50, 0]}, index=idx)
+    out = drop_placeholder_bars(df)
+    # Se va solo la fila plana con volumen 0; la plana con volumen y la de volumen 0 con rango se quedan.
+    assert list(out.index) == [idx[0], idx[2], idx[3]]
+
+
+def test_yfinance_history_drops_placeholders_except_fx():
+    idx = pd.DatetimeIndex(pd.to_datetime(["2026-07-01", "2026-07-02", "2026-07-03"])).tz_localize("America/Santiago")
+    raw = pd.DataFrame({"Open": [10, 9, 9.5], "High": [11, 9, 10], "Low": [9, 9, 9], "Close": [10, 9, 9.8],
+                        "Adj Close": [10, 9, 9.8], "Volume": [100, 0, 80]}, index=idx)
+    assert len(YFinanceProvider(lambda s: FakeTicker(raw)).get_history("SQM-B.SN")) == 2
+    assert len(YFinanceProvider(lambda s: FakeTicker(raw)).get_history("CLP=X")) == 3

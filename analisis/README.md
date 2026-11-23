@@ -14,19 +14,32 @@ Es independiente de la PWA que está en la raíz del repositorio: no comparte c�
 |---|---|---|
 | 1 | Datos (proveedores intercambiables, dólar, SQLite, actualización periódica) + indicadores | ✅ |
 | 2 | Motor de señales + backtest | ✅ |
-| 3 | Dashboard web (React) | pendiente |
+| 3 | Dashboard web (React) | ✅ |
 | 4 | Cartera, aportes y alertas | pendiente |
 
 ## Instalación
 
-Requiere **Python 3.11 o superior**.
+Requiere **Python 3.11 o superior** y, para el dashboard, **Node.js 20 o superior**.
 
 ```bash
 cd analisis
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r backend/requirements-dev.txt
+
+cd frontend
+npm install
+npm run build                      # deja el dashboard compilado en frontend/dist
 ```
+
+Después, para usar la app:
+
+```bash
+cd analisis/backend
+uvicorn app.main:app               # abre http://127.0.0.1:8000
+```
+
+El servidor sirve el dashboard y la API en el mismo puerto, y solo escucha en tu computador (127.0.0.1).
 
 ## Configuración
 
@@ -91,7 +104,7 @@ python -m app.cli refresh                   # actualiza toda la watchlist y la g
 ### API
 
 ```bash
-uvicorn app.main:app --reload               # http://127.0.0.1:8000/docs
+uvicorn app.main:app --reload               # dashboard en http://127.0.0.1:8000, API en /docs
 ```
 
 Al iniciar, la app descarga 10 años de historia diaria de cada símbolo (unos segundos) y luego actualiza
@@ -127,6 +140,44 @@ Cada precio incluye `freshness.label`, que dice siempre qué tipo de dato es y d
 | `diario` | Dato diario oficial del 23/11 (dólar observado) |
 
 Las horas se muestran en la zona de `general.timezone` (Santiago por defecto).
+
+## Dashboard
+
+En `http://127.0.0.1:8000` (después de `npm run build`):
+
+- **Aviso fijo** arriba: «Herramienta educativa, no es asesoría financiera».
+- **Barra superior**: estado de la Bolsa de Santiago y de EE.UU. (abierta hasta / abre a), dólar, hora del último
+  ciclo del servidor, botón **Actualizar** y tema claro/oscuro/sistema.
+- **Watchlist** agrupada en Chile / Internacional: precio, variación del día, **frescura del dato con su hora**
+  (Tiempo real / Retraso / Cerrado / Desactualizado), señal, puntaje y confianza, y aviso si la señal cambió desde
+  el día anterior. Se agregan símbolos escribiéndolos (se validan contra el proveedor) y se quitan con ×.
+- **Detalle** del símbolo seleccionado (la URL `#SQM-B.SN` lo deja enlazable):
+  - Precio grande con su fuente y etiqueta de frescura completa («Con retraso · dato de 11:15 (hace 17 min)»).
+  - **Señal**: etiqueta, puntaje, confianza, resumen, qué hacer si la tienes o no, avisos (provisional,
+    volatilidad alta, huecos de datos), stop de referencia y una barra por estrategia (azul = compra,
+    rojo = venta, con los umbrales marcados) con sus razones.
+  - **Gráfico** de velas con SMA 20/50/200 y Bollinger, y paneles de volumen, RSI (líneas 30/70) y MACD;
+    cada uno se activa o desactiva. Al pasar el cursor se leen todos los valores de ese día.
+    Periodos de 3 meses a 10 años.
+  - **Evolución de la señal combinada** con las líneas de COMPRAR y VENDER.
+  - **Métricas**: retornos, volatilidad, máximos y mínimos de 52 semanas, distancia a la SMA200, RSI, ATR,
+    volumen relativo.
+  - **Backtest**: años y comisión; tabla contra buy & hold y curvas de «valor de 100 invertidos».
+- Se actualiza solo cada 30–60 s (y deja de consultar cuando la pestaña está oculta). Funciona en el celular.
+
+Colores: azul/rojo para la dirección de la señal y verde/rojo para la variación de precio, siempre acompañados
+de icono, signo o texto (nunca solo el color). La paleta de las series se validó para daltonismo en
+modo claro y oscuro.
+
+### Desarrollo del dashboard
+
+```bash
+# terminal 1
+cd analisis/backend && uvicorn app.main:app --reload
+# terminal 2
+cd analisis/frontend && npm run dev    # http://127.0.0.1:5173, recarga al guardar; /api va al puerto 8000
+npm test                               # tests del formato de números
+```
 
 ## Indicadores
 
@@ -241,6 +292,11 @@ analisis/
 ├── config.yaml            perfil, watchlist inicial, proveedores, límites
 ├── .env.example           API keys (copiar a .env)
 ├── data/                  base SQLite (se crea sola, no se sube a git)
+├── frontend/              dashboard React + Vite + lightweight-charts
+│   └── src/
+│       ├── App.tsx        estructura, barra superior, polling
+│       ├── api.ts         cliente de la API
+│       └── components/    Watchlist, SignalCard, PriceChart, ScoreChart, Metrics, BacktestPanel
 └── backend/
     ├── app/
     │   ├── main.py        FastAPI + actualización periódica
@@ -269,5 +325,9 @@ analisis/
 - **Símbolo inexistente**: al agregarlo, la API responde 404 con una pista (por ejemplo, el sufijo `.SN`).
   No cuenta como falla del proveedor.
 - **Falla al actualizar**: se conserva el último precio bueno y se marca `status: "error"` con el motivo.
+- **Velas de relleno de Yahoo**: a veces Yahoo "rellena" semanas sin datos reales repitiendo el último precio con
+  volumen 0 (visto en 2026 en SQM-B.SN, FALABELLA.SN y CHILE.SN, de julio a octubre). Esas filas se descartan al
+  descargar y al iniciar, porque aplanan las medias y falsean el backtest. Si queda un hueco de más de 10 días en el
+  último año, la señal lo avisa.
 - **Horario de Santiago**: la librería de calendarios usa cierre a las 17:00 entre noviembre y febrero y a las 16:00
   el resto del año. Si en la práctica cierra antes, solo se consulta de más esa hora.

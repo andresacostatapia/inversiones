@@ -175,3 +175,27 @@ def test_backtest_endpoint(setup):
 
     assert client.post("/api/backtest", json={"symbol": "SPY", "strategies": ["magia"]}).status_code == 422
     assert client.post("/api/backtest", json={"symbol": "SPY", "buy_threshold": -40}).status_code == 422
+
+
+def test_placeholder_bars_purged_and_gap_warned(setup):
+    client, _ = setup
+    client.post("/api/refresh")
+    from datetime import date, timedelta
+
+    from sqlalchemy import delete
+
+    from app.db import PriceBar
+    from app.signal_service import find_gaps
+
+    md = client.app.state.md
+    with md.Session() as s:
+        # Simula 3 semanas sin datos reales: se borran velas y se ponen dos de relleno.
+        s.execute(delete(PriceBar).where(PriceBar.symbol == "SPY", PriceBar.date.between(date(2026, 9, 1), date(2026, 9, 25))))
+        for d in (date(2026, 9, 10), date(2026, 9, 11)):
+            s.add(PriceBar(symbol="SPY", date=d, open=1, high=1, low=1, close=1, volume=0, source="yfinance"))
+        s.commit()
+    assert md.purge_placeholder_bars() == 2
+    gaps = find_gaps(md.bars("SPY"))
+    assert gaps and gaps[0][0] < date(2026, 9, 1) and gaps[0][1] > date(2026, 9, 25) - timedelta(days=1)
+    w = client.get("/api/signals/SPY").json()["warnings"]
+    assert any("Faltan datos reales" in x for x in w)
