@@ -5,8 +5,8 @@ import golden from './__fixtures__/golden.json'
 import { runBacktest, type BacktestConfig } from './backtest'
 import { pyRound } from './fmt'
 import { basicMetrics, computeAll, type Bars, type Frame } from './indicators'
-import { freshness, isOpen } from './market'
-import { buildPositions, suggestContribution, valuePortfolio, type Candidate, type Tx } from './portfolio'
+import { freshness, isOpen, marketOf, type Market } from './market'
+import { buildPositions, investability, suggestContribution, valuePortfolio, type Candidate, type Tx } from './portfolio'
 import { DEFAULT_SIGNALS, evaluate, scoreFrame, type SignalsConfig } from './signals'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,16 +121,28 @@ describe('cartera', () => {
 })
 
 describe('mercado', () => {
+  it('clasificación de símbolos', () => {
+    for (const [sym, m] of Object.entries(G.market.markets)) expect([sym, marketOf(sym)]).toEqual([sym, m])
+  })
+  it('qué permite comprar el perfil', () => {
+    for (const c of G.market.investability) {
+      const [sym, kind, cur, name] = c.args
+      const [d, l, sh] = c.flags ?? [false, false, false]
+      expect([sym, investability(sym, kind, cur, name, d, l, sh)]).toEqual([sym, c.result])
+    }
+  })
   it('horarios con feriados y cierres anticipados', () => {
     for (const h of G.market.hours) {
       const t = new Date(h.t)
-      expect({ t: h.t, CL: isOpen('CL', t), US: isOpen('US', t), FX: isOpen('FX', t) }).toEqual(h)
+      const got = Object.fromEntries((['CL', 'US', 'FX', 'GLB', 'CRY', 'OTHER'] as Market[]).map((m) => [m, isOpen(m, t)]))
+      expect({ t: h.t, ...got }).toEqual(h)
     }
   })
   it('etiquetas de frescura', () => {
     const now = new Date(G.market.now)
     for (const f of G.market.freshness) {
-      const r = freshness(new Date(f.as_of), { realtime: f.realtime, marketOpen: f.market_open, now, daily: f.daily })
+      const r = freshness(new Date(f.as_of), { realtime: f.realtime, marketOpen: f.market_open, now, daily: f.daily,
+        hoursKnown: f.hours_known })
       expect({ ...r, age_minutes: pyRound(r.age_minutes ?? NaN, 1) }).toEqual(f.result)
     }
   })

@@ -4,16 +4,17 @@ import { runBacktest, type BacktestConfig } from '../core/backtest'
 import { num, pct } from '../core/fmt'
 import { basicMetrics, computeAll, type Bars } from '../core/indicators'
 import { freshness, isOpen, marketOf, sessionInfo, type Freshness } from '../core/market'
-import { buildPositions, bucketOf, InvalidTransaction, suggestContribution, valuePortfolio, type Candidate, type PriceInfo, type Tx } from '../core/portfolio'
+import { buildPositions, bucketOf, InvalidTransaction, investability, suggestContribution, valuePortfolio, type Candidate, type PriceInfo, type Tx } from '../core/portfolio'
+import { KIND_LABELS } from '../core/catalog'
 import { evaluate, scoreFrame, scoreHistory, type Label, type SignalsConfig } from '../core/signals'
 import { fingerprint, mapHeaders, parseCsv, parseDate, parseNum, parseSide } from './csv'
 import { Db } from './db'
 import { getJson, mindicadorBase } from './net'
-import { getHistory, getQuote, RateLimited, SymbolNotFound, type Quote } from './yahoo'
+import { getHistory, getQuote, RateLimited, search as yahooSearch, SymbolNotFound, type Quote } from './yahoo'
 
 export const DISCLAIMER = 'Herramienta educativa, no es asesoría financiera.'
 const PAIR = 'USDCLP'
-const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.\-=^]{0,19}$/
+const SYMBOL_RE = /^[A-Z0-9^][A-Z0-9.\-=^]{0,19}$/ // ^ al inicio: índices (^GSPC)
 const PERIODS: Record<string, number | null> = { '1m': 31, '3m': 92, '6m': 183, '1y': 366, '2y': 731, '5y': 1827, '10y': 3653, max: null }
 const DAY = 864e5
 
@@ -37,6 +38,9 @@ export interface Settings {
     sell_drawdown_pct: number
     monthly_contribution_clp: number
     fractional_shares: Record<string, boolean>
+    allow_derivatives?: boolean
+    allow_leverage?: boolean
+    allow_short?: boolean
   }
   alerts: { signal_changes: boolean; data_error_minutes: number; notify_min_severity: string }
 }
@@ -47,7 +51,8 @@ export const DEFAULT_SETTINGS: Settings = {
   signals: { thresholds: { buy: 30, sell: -30 }, weights: { trend: 1, rsi: 1, macd: 1, bollinger: 1 }, volume_effect: 0.2 },
   backtest: { commission_pct: 0.5, slippage_pct: 0, default_years: 10 },
   risk_profile: { target_allocation: { CL: 0.3, INTL: 0.7 }, review_drawdown_pct: -20, sell_drawdown_pct: -25,
-    monthly_contribution_clp: 500000, fractional_shares: { CL: false, US: true } },
+    monthly_contribution_clp: 500000, fractional_shares: { CL: false, US: true },
+    allow_derivatives: false, allow_leverage: false, allow_short: false },
   alerts: { signal_changes: true, data_error_minutes: 30, notify_min_severity: 'warning' },
 }
 export const DEFAULT_WATCHLIST = ['SQM-B.SN', 'CHILE.SN', 'SPY', 'VOO', 'EEM', 'VWO']
@@ -135,7 +140,8 @@ export class LocalBackend {
 
   async init() {
     const s = await this.db.get<Settings>('kv', 'settings')
-    this.settings = s ? { ...DEFAULT_SETTINGS, ...s } : DEFAULT_SETTINGS
+    // Valores nuevos de versiones posteriores se completan con los por defecto.
+    this.settings = s ? { ...DEFAULT_SETTINGS, ...s, risk_profile: { ...DEFAULT_SETTINGS.risk_profile, ...s.risk_profile } } : DEFAULT_SETTINGS
     if (!s) await this.db.put('kv', DEFAULT_SETTINGS, 'settings')
     if (!(await this.db.get('kv', 'watchlist'))) await this.db.put('kv', DEFAULT_WATCHLIST, 'watchlist')
   }
@@ -189,7 +195,7 @@ export class LocalBackend {
   private async updateTodayBar(q: Quote) {
     const rec = await this.db.get<BarsRow>('bars', q.symbol)
     if (!rec) return // sin historia todavía: la trae refreshHistory
-    const tz = marketOf(q.symbol) === 'CL' ? 'America/Santiago' : 'America/New_York'
+    const tz = q.tz ?? (marketOf(q.symbol) === 'CL' ? 'America/Santiago' : 'America/New_York')
     const d = new Date(q.as_of).toLocaleDateString('sv-SE', { timeZone: tz })
     const n = rec.date.length
     if (n && rec.date[n - 1] === d) {
@@ -252,12 +258,12 @@ export class LocalBackend {
     const asOf = q?.as_of ? new Date(q.as_of) : null
     const fresh = freshness(asOf, {
       realtime: !!q?.realtime, marketOpen: isOpen(market, now), now, staleAfterMinutes: this.settings.stale_after_minutes,
-      tz: this.settings.timezone, daily: !!q?.source?.includes('observado'),
+      tz: this.settings.timezone, daily: !!q?.source?.includes('observado'), hoursKnown: market !== 'OTHER',
     })
     const price = q?.price ?? null
     const prev = q?.prev_close ?? null
     return {
-      symbol, name: q?.name ?? null, market, currency: q?.currency ?? null, price, prev_close: prev,
+      symbol, name: q?.name ?? null, market, kind: q?.kind ?? null, currency: q?.currency ?? null, price, prev_close: prev,
       change_pct: price && prev ? (price / prev - 1) * 100 : null, source: q?.source ?? null,
       as_of: q?.as_of ?? null, fetched_at: q?.fetched_at ?? null, status: q?.status ?? 'sin_datos', error: q?.error ?? null,
       freshness: fresh,
@@ -591,6 +597,10 @@ export class LocalBackend {
       throw new ApiError(422, (e as Error).message)
     }
     if (!(await this.watchlistSymbols()).includes(symbol)) await this.addSymbol(symbol)
+    if (side === 'compra') {
+      const reason = await this.blocked(symbol)
+      if (reason) throw new ApiError(422, `${symbol}: ${reason}`)
+    }
     const currency = (await this.quoteView(symbol)).currency ?? (marketOf(symbol) === 'CL' ? 'CLP' : 'USD')
     let fx: number
     let src: TxRow['fx_source']
@@ -626,6 +636,33 @@ export class LocalBackend {
     }
     await this.db.delete('transactions', id)
     return { deleted: id }
+  }
+
+  /** Por qué el perfil no permite comprar el símbolo (índice, futuro, divisa, moneda no soportada, apalancado). */
+  private async blocked(symbol: string): Promise<string | null> {
+    const q = await this.quoteView(symbol)
+    const rp = this.settings.risk_profile
+    return investability(symbol, q.kind, q.currency, q.name, !!rp.allow_derivatives, !!rp.allow_leverage, !!rp.allow_short)
+  }
+
+  async search(query: string) {
+    const q = (query ?? '').trim()
+    if (!q) throw new ApiError(422, 'escribe algo para buscar')
+    let hits
+    try {
+      hits = await this.yahoo(() => yahooSearch(q))
+    } catch (e) {
+      if (e instanceof RateLimited) throw new ApiError(429, e.message)
+      throw new ApiError(502, `La búsqueda no respondió: ${(e as Error).message}`)
+    }
+    const wl = new Set(await this.watchlistSymbols())
+    const rp = this.settings.risk_profile
+    return {
+      query: q,
+      results: hits.map((h) => ({ ...h, kind_label: KIND_LABELS[h.kind ?? ''] ?? h.kind ?? '', market: marketOf(h.symbol),
+        note: investability(h.symbol, h.kind, null, h.name, !!rp.allow_derivatives, !!rp.allow_leverage, !!rp.allow_short),
+        in_watchlist: wl.has(h.symbol.toUpperCase()) })),
+    }
   }
 
   private async priceInfo(symbol: string): Promise<PriceInfo> {
@@ -668,7 +705,7 @@ export class LocalBackend {
       const pos = held.get(s)
       cands.push({ symbol: s, price_native: info.price, currency: cur, price_clp: cur === 'USD' ? info.price * fx : info.price,
         signal: label, held: !!pos, name: info.name ?? null, risk: (pos?.status as string) ?? null,
-        drawdown_pct: (pos?.drawdown_pct as number) ?? null })
+        drawdown_pct: (pos?.drawdown_pct as number) ?? null, blocked: await this.blocked(s) })
     }
     const res = suggestContribution(value, bucketValues, cands, rp.target_allocation, rp.fractional_shares)
     return { disclaimer: DISCLAIMER, ...res, fx, portfolio_value_clp: Object.values(bucketValues).reduce((a, b) => a + b, 0) }

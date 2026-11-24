@@ -5,20 +5,21 @@ from __future__ import annotations
 import asyncio
 import math
 from datetime import date as date_type
-from typing import Literal
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from .. import indicators as ind
+from ..alerts import AlertEngine
 from ..market_data import InvalidSymbol, MarketData, normalize_symbol
 from ..market_hours import session_info
-from ..providers.base import SymbolNotFound
-from ..providers.fx import PAIR
-from ..alerts import AlertEngine
-from ..portfolio import InvalidTransaction
+from ..portfolio import InvalidTransaction, investability
 from ..portfolio_service import PortfolioService, TxIn
+from ..providers.base import RateLimited, SymbolNotFound, market_of
+from ..providers.fx import PAIR
+from ..providers.yfinance_provider import search as yahoo_search
 from ..signal_service import NoHistory, SignalService
 from ..strategies import STRATEGIES
 
@@ -345,3 +346,25 @@ async def test_alert(request: Request):
 def profile(request: Request):
     """Perfil de riesgo vigente (config.yaml)."""
     return md(request).cfg.risk_profile.model_dump()
+
+
+# --- Búsqueda de símbolos ---------------------------------------------------------
+
+@router.get("/search")
+async def search(request: Request, q: str = Query(..., min_length=1, max_length=60)):
+    """Busca por nombre o código en Yahoo. Cada resultado dice su mercado y si tu perfil permite comprarlo."""
+    m = md(request)
+    rp = m.cfg.risk_profile
+    try:
+        found = await asyncio.to_thread(yahoo_search, q.strip())
+    except RateLimited as e:
+        raise HTTPException(429, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"La búsqueda no respondió: {e}")
+    wl = set(m.watchlist())
+    for r in found:
+        r["market"] = market_of(r["symbol"])
+        r["note"] = investability(r["symbol"], r["kind"], None, r["name"], rp.allow_derivatives, rp.allow_leverage,
+                                  rp.allow_short)
+        r["in_watchlist"] = r["symbol"].upper() in wl
+    return {"query": q, "results": found}

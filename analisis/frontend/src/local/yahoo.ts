@@ -22,6 +22,8 @@ export interface Quote {
   day_high: number | null
   day_low: number | null
   volume: number | null
+  kind?: string | null // EQUITY, ETF, INDEX, FUTURE, CURRENCY, CRYPTOCURRENCY…
+  tz?: string | null // zona horaria de la bolsa
 }
 
 interface ChartResult {
@@ -112,7 +114,31 @@ export async function getQuote(symbol: string): Promise<Quote> {
     name: ((m.longName ?? m.shortName) as string) ?? null, exchange: ((m.fullExchangeName ?? m.exchangeName) as string) ?? null,
     day_open: today >= 0 ? bars.open[today] : null, day_high: today >= 0 ? bars.high[today] : null,
     day_low: today >= 0 ? bars.low[today] : null, volume: today >= 0 ? bars.volume[today] : null,
+    kind: (m.instrumentType as string) ?? null, tz,
   }
+}
+
+export interface YahooSearchHit {
+  symbol: string
+  name: string
+  exchange: string | null
+  kind: string | null
+}
+
+/** Búsqueda de símbolos por nombre o código (Yahoo), como yfinance.Search en el servidor. */
+export async function search(query: string, limit = 10): Promise<YahooSearchHit[]> {
+  const qs = new URLSearchParams({ q: query, quotesCount: String(limit), newsCount: '0', listsCount: '0' })
+  let data: { quotes?: { symbol?: string; shortname?: string; longname?: string; exchange?: string; exchDisp?: string; quoteType?: string }[] }
+  try {
+    data = await getJson(`${yahooBase()}/v1/finance/search?${qs}`)
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 429) throw new RateLimited('Yahoo limitó las consultas; se reintenta más tarde')
+    throw new Error(`búsqueda en Yahoo falló (${(e as Error).message})`)
+  }
+  return (data.quotes ?? [])
+    .filter((q) => q.symbol && q.quoteType !== 'OPTION')
+    .map((q) => ({ symbol: q.symbol!, name: q.longname ?? q.shortname ?? q.symbol!, exchange: q.exchDisp ?? q.exchange ?? null,
+      kind: q.quoteType ?? null }))
 }
 
 /** Historia diaria desde `start` (AAAA-MM-DD) o de `years` años. */

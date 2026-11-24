@@ -25,7 +25,16 @@ from app import indicators as ind  # noqa: E402
 from app.backtest import run_backtest  # noqa: E402
 from app.config import BacktestConfig, SignalsConfig  # noqa: E402
 from app.market_hours import freshness, is_open  # noqa: E402
-from app.portfolio import Candidate, PriceInfo, Tx, build_positions, suggest_contribution, value_portfolio  # noqa: E402
+from app.portfolio import (  # noqa: E402
+    Candidate,
+    PriceInfo,
+    Tx,
+    build_positions,
+    investability,
+    suggest_contribution,
+    value_portfolio,
+)
+from app.providers.base import market_of  # noqa: E402
 from app.signals import evaluate, score_frame  # noqa: E402
 
 OUT = ROOT.parent / "frontend" / "src" / "core" / "__fixtures__" / "golden.json"
@@ -158,6 +167,9 @@ def main() -> None:
         Candidate("SPY", 722.29, "USD", 722.29 * 1016, "MANTENER", True, None, "ok", 11.1),
         Candidate("VOO", 663.91, "USD", 663.91 * 1016, "VENDER", True, None, "ok", 10.6),
         Candidate("EEM", 57.83, "USD", 57.83 * 1016, None, True),
+        Candidate("^GSPC", 6800, "USD", 6800 * 1016, "COMPRAR", False, None, None, None,
+                  investability("^GSPC", "INDEX", "USD", "S&P 500")),
+        Candidate("GLD", 380, "USD", 380 * 1016, "COMPRAR", False, "SPDR Gold Shares"),
     ]
     bucket_values = {a["bucket"]: a["value_clp"] for a in val["allocation"]}
     contributions = []
@@ -184,16 +196,38 @@ def main() -> None:
     stamps += [datetime(2026, 11, 26, 16, 0, tzinfo=utc), datetime(2026, 11, 27, 17, 59, tzinfo=utc),
                datetime(2026, 11, 27, 18, 0, tzinfo=utc), datetime(2026, 7, 6, 13, 45, tzinfo=utc),
                datetime(2026, 12, 25, 15, 0, tzinfo=utc), datetime(2027, 1, 4, 13, 0, tzinfo=utc)]
-    hours = [{"t": s.isoformat(), "CL": is_open("CL", s), "US": is_open("US", s), "FX": is_open("FX", s)} for s in stamps]
+    stamps += [datetime(2026, 11, 25, 3, 0, tzinfo=utc), datetime(2026, 11, 25, 22, 30, tzinfo=utc),
+               datetime(2026, 11, 28, 15, 0, tzinfo=utc), datetime(2026, 11, 29, 20, 0, tzinfo=utc),
+               datetime(2026, 11, 29, 23, 30, tzinfo=utc), datetime(2026, 7, 10, 21, 0, tzinfo=utc)]
+    hours = [{"t": s.isoformat(), **{m: is_open(m, s) for m in ("CL", "US", "FX", "GLB", "CRY", "OTHER")}} for s in stamps]
+    symbols = ["SQM-B.SN", "SPY", "BRK-B", "^GSPC", "CLP=X", "USDCLP", "GC=F", "EURUSD=X", "BTC-USD", "ETH-USDT",
+               "005930.KS", "SMSN.IL", "CFIETFIPSA.SN"]
+    markets = {sym: market_of(sym) for sym in symbols}
+    inv_cases = [("NVDA", "EQUITY", "USD", "NVIDIA Corporation"), ("GLD", "ETF", "USD", "SPDR Gold Shares"),
+                 ("BTC-USD", "CRYPTOCURRENCY", "USD", "Bitcoin USD"), ("SHV", "ETF", "USD", "iShares Short Treasury Bond ETF"),
+                 ("^GSPC", "INDEX", "USD", "S&P 500"), ("GC=F", "FUTURE", "USD", "Gold"), ("EURUSD=X", "CURRENCY", "USD", "EUR/USD"),
+                 ("005930.KS", "EQUITY", "KRW", "Samsung"), ("TQQQ", "ETF", "USD", "ProShares UltraPro QQQ"),
+                 ("SOXL", "ETF", "USD", "Direxion Daily Semiconductor Bull 3X Shares"),
+                 ("NVDX", "ETF", "USD", "T-Rex 2X Long NVIDIA Daily Target ETF"), ("SH", "ETF", "USD", "ProShares Short S&P500"),
+                 ("SQQQ", "ETF", "USD", "ProShares UltraShort QQQ"), ("X", None, None, None)]
+    investable = [{"args": list(c), "result": investability(*c)} for c in inv_cases]
+    investable.append({"args": ["GC=F", "FUTURE", "USD", "Gold"], "flags": [True, False, False],
+                       "result": investability("GC=F", "FUTURE", "USD", "Gold", True, False, False)})
     now = datetime(2026, 11, 23, 15, 0, tzinfo=utc)
     fresh = []
     for age_min, rt, open_, daily in ((0.5, True, True, False), (1, True, True, False), (5, True, True, False),
                                       (16, False, True, False), (45, False, True, False), (200, False, True, False),
                                       (60 * 72, False, False, False), (60 * 12, False, True, True), (0.2, False, True, False)):
         as_of = now - timedelta(minutes=age_min)
-        fresh.append({"as_of": as_of.isoformat(), "realtime": rt, "market_open": open_, "daily": daily,
+        fresh.append({"as_of": as_of.isoformat(), "realtime": rt, "market_open": open_, "daily": daily, "hours_known": True,
                       "result": freshness(as_of, realtime=rt, market_open=open_, now=now, daily=daily)})
-    cases["market"] = {"hours": hours, "now": now.isoformat(), "freshness": clean(fresh)}
+    for age_min in (5, 60 * 30):
+        as_of = now - timedelta(minutes=age_min)
+        fresh.append({"as_of": as_of.isoformat(), "realtime": False, "market_open": False, "daily": False,
+                      "hours_known": False, "result": freshness(as_of, realtime=False, market_open=False, now=now,
+                                                                hours_known=False)})
+    cases["market"] = {"hours": hours, "now": now.isoformat(), "freshness": clean(fresh), "markets": markets,
+                       "investability": investable}
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(cases, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

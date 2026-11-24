@@ -40,7 +40,7 @@ def _ticker(symbol: str):
 class YFinanceProvider:
     name = "yfinance"
     capabilities = Capabilities(
-        markets=frozenset({"US", "CL", "FX"}),
+        markets=frozenset({"US", "CL", "FX", "GLB", "CRY", "OTHER"}),
         realtime=frozenset(),
         history=True,
         needs_key=False,
@@ -110,6 +110,8 @@ class YFinanceProvider:
             day_high=None if today is None else float(today["high"]),
             day_low=None if today is None else float(today["low"]),
             volume=None if today is None else float(today["volume"]),
+            kind=meta.get("instrumentType"),
+            tz=meta.get("exchangeTimezoneName"),
         )
 
     def get_history(self, symbol: str, start: datetime | None = None, end: datetime | None = None) -> pd.DataFrame:
@@ -120,3 +122,31 @@ class YFinanceProvider:
         bars = normalize_history(raw)
         return bars if market_of(symbol) == "FX" else drop_placeholder_bars(bars)
 
+
+
+TYPE_LABELS = {"EQUITY": "Acción", "ETF": "ETF", "INDEX": "Índice", "FUTURE": "Futuro", "CURRENCY": "Divisa",
+               "CRYPTOCURRENCY": "Cripto", "MUTUALFUND": "Fondo", "OPTION": "Opción"}
+
+
+def search(query: str, limit: int = 10) -> list[dict]:
+    """Búsqueda de símbolos por nombre o código (Yahoo). Devuelve símbolo, nombre, bolsa y tipo."""
+    import yfinance as yf
+
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+    try:
+        quotes = yf.Search(query, max_results=limit, news_count=0, lists_count=0).quotes or []
+    except Exception as e:
+        msg = str(e).lower()
+        if "rate limit" in msg or "too many requests" in msg:
+            raise RateLimited(f"Yahoo limitó las consultas: {e}") from e
+        raise ProviderError(f"búsqueda en Yahoo falló ({e})") from e
+    out = []
+    for q in quotes:
+        sym = q.get("symbol")
+        kind = q.get("quoteType")
+        if not sym or kind == "OPTION":
+            continue
+        out.append({"symbol": sym, "name": q.get("longname") or q.get("shortname") or sym,
+                    "exchange": q.get("exchDisp") or q.get("exchange"), "kind": kind,
+                    "kind_label": TYPE_LABELS.get(kind or "", kind or "")})
+    return out

@@ -9,7 +9,19 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 CALENDARS = {"CL": "XSGO", "US": "XNYS"}  # Bolsa de Santiago, NYSE (los ETF de NYSE Arca siguen el mismo horario)
-MARKET_NAMES = {"CL": "Bolsa de Santiago", "US": "EE.UU.", "FX": "Dólar (USD/CLP)"}
+MARKET_NAMES = {"CL": "Bolsa de Santiago", "US": "EE.UU.", "FX": "Dólar (USD/CLP)", "GLB": "Futuros y divisas",
+                "CRY": "Cripto", "OTHER": "Otras bolsas"}
+CHICAGO = ZoneInfo("America/Chicago")
+
+
+def _globex_open(now: datetime) -> bool:
+    """Futuros y divisas (CME Globex): de domingo 17:00 a viernes 16:00 hora de Chicago, con pausa diaria
+    de 16:00 a 17:00. Sin feriados (aproximación: en un feriado se ve "con retraso" en vez de "cerrado")."""
+    t = now.astimezone(CHICAGO)
+    wd, h = t.weekday(), t.hour
+    if wd == 5 or (wd == 6 and h < 17) or (wd == 4 and h >= 16):
+        return False
+    return h != 16
 
 
 @lru_cache
@@ -23,6 +35,12 @@ def is_open(market: str, now: datetime | None = None) -> bool:
     """El dólar (USD/CLP) se trata con el horario de Santiago: fuera de él casi no hay operaciones
     y el precio de Yahoo se queda quieto, así que se muestra como "cierre" y no como "desactualizado"."""
     now = now or datetime.now(timezone.utc)
+    if market == "GLB":
+        return _globex_open(now)
+    if market == "CRY":
+        return True
+    if market not in ("CL", "US", "FX"):
+        return False  # otras bolsas: horario desconocido (se consulta cada hora y se muestra la hora del dato)
     cal = _calendar(CALENDARS["CL" if market == "FX" else market])
     ts = pd.Timestamp(now).tz_convert("UTC").floor("min")
     if ts < cal.first_minute or ts > cal.last_minute:
@@ -35,6 +53,8 @@ def session_info(market: str, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     open_now = is_open(market, now)
     info = {"market": market, "name": MARKET_NAMES.get(market, market), "open": open_now}
+    if market not in ("CL", "US", "FX"):
+        return info
     cal = _calendar(CALENDARS["CL" if market == "FX" else market])
     ts = pd.Timestamp(now).tz_convert("UTC").floor("min")
     try:
@@ -57,6 +77,7 @@ def freshness(
     stale_after_minutes: int = 30,
     tz: str = "America/Santiago",
     daily: bool = False,
+    hours_known: bool = True,
 ) -> dict:
     """Etiqueta para la UI: si el dato es en tiempo real, con retraso, de cierre o desactualizado, y su hora."""
     now = now or datetime.now(timezone.utc)
@@ -72,6 +93,8 @@ def freshness(
 
     if daily:  # p. ej. el dólar observado: un valor oficial por día hábil
         kind, label = "diario", f"Dato diario oficial del {local.strftime('%d/%m')}"
+    elif not hours_known:  # otras bolsas: no se sabe si está abierta; solo la hora del dato
+        kind, label = "cierre", f"Último precio {when} · horario de esa bolsa no disponible"
     elif not market_open:
         kind, label = "cierre", f"Mercado cerrado · último precio {when}"
     elif age > stale_after_minutes:

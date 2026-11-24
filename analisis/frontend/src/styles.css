@@ -318,3 +318,28 @@ footer {
   .alerts li { grid-template-columns: minmax(0, 1fr); }
   .alert-actions { justify-content: flex-start; }
 }
+
+/* --- Buscador de símbolos --- */
+.symsearch { position: relative; }
+.sr-box {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin: 6px 0;
+  max-height: 420px; overflow-y: auto; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+.sr-list { list-style: none; margin: 0; padding: 0; }
+.sr-item button {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; border: 0; background: none;
+  padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.sr-item.active button, .sr-item button:hover:not(:disabled) { background: var(--hover); }
+.sr-item button:disabled { cursor: default; opacity: 0.75; }
+.sr-top { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.sr-name { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-meta { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; color: var(--muted); }
+.tag.ok { color: var(--gain); border-color: currentColor; }
+.tag.only { color: var(--warn-ink); background: var(--warn-bg); border-color: transparent; }
+.sr-note { font-size: 11.5px; color: var(--muted); }
+.sr-status { padding: 8px 10px; margin: 0; }
+.sr-cat { padding: 8px 10px 4px; }
+.sr-cat h3 { margin-top: 4px; }
+.sr-cat .sr-item button { padding: 6px 4px; }

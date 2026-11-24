@@ -31,13 +31,14 @@ function makeSeries(n: number, last: number, seed: number, openUtcMin: number): 
   }
 }
 
-const SERIES: Record<string, Series & { currency: string; tz: string; name: string }> = {
+const SERIES = {
   SPY: { ...makeSeries(900, 722.29, 7, 870), currency: 'USD', tz: 'America/New_York', name: 'SPDR S&P 500' },
   VOO: { ...makeSeries(900, 663.91, 11, 870), currency: 'USD', tz: 'America/New_York', name: 'Vanguard S&P 500' },
   'SQM-B.SN': { ...makeSeries(900, 49780, 3, 750), currency: 'CLP', tz: 'America/Santiago', name: 'SQM' },
   'CHILE.SN': { ...makeSeries(900, 188.35, 5, 750), currency: 'CLP', tz: 'America/Santiago', name: 'Banco de Chile' },
   'CLP=X': { ...makeSeries(900, 1016, 9, 600), currency: 'CLP', tz: 'Europe/London', name: 'USD/CLP' },
-}
+  '^GSPC': { ...makeSeries(900, 6800, 23, 870), currency: 'USD', tz: 'America/New_York', name: 'S&P 500', kind: 'INDEX' },
+} as Record<string, Series & { currency: string; tz: string; name: string; kind?: string }>
 // Velas de relleno de Yahoo en SQM-B (volumen 0, precio plano) durante 3 semanas.
 {
   const s = SERIES['SQM-B.SN']
@@ -63,7 +64,7 @@ function chartJson(sym: string, url: URL) {
     chart: {
       result: [{
         meta: { currency: s.currency, exchangeTimezoneName: s.tz, regularMarketPrice: s.c[n - 1],
-          regularMarketTime: s.ts[n - 1] + 6 * 3600, longName: s.name, fullExchangeName: 'X' },
+          regularMarketTime: s.ts[n - 1] + 6 * 3600, longName: s.name, fullExchangeName: 'X', instrumentType: s.kind ?? 'EQUITY' },
         timestamp: take.map((i) => s.ts[i]),
         indicators: {
           quote: [{ open: take.map((i) => s.o[i]), high: take.map((i) => s.h[i]), low: take.map((i) => s.l[i]),
@@ -90,6 +91,14 @@ beforeEach(() => {
     if (url.host === 'm.test') {
       if (mindicadorDown) return json({}, 503)
       return json({ serie: [{ fecha: '2026-11-23T03:00:00.000Z', valor: 1015.3 }, { fecha: '2026-11-21T03:00:00.000Z', valor: 1021 }] })
+    }
+    if (url.pathname.endsWith('/v1/finance/search')) {
+      return json({ quotes: [
+        { symbol: '^GSPC', shortname: 'S&P 500', exchange: 'SNP', exchDisp: 'SNP', quoteType: 'INDEX' },
+        { symbol: 'SPY', longname: 'SPDR S&P 500 ETF Trust', exchange: 'PCX', exchDisp: 'NYSEArca', quoteType: 'ETF' },
+        { symbol: 'SPXL', longname: 'Direxion Daily S&P 500 Bull 3X Shares', exchange: 'PCX', quoteType: 'ETF' },
+        { symbol: 'SPY260116C00700000', shortname: 'opción', quoteType: 'OPTION' },
+      ] })
     }
     const sym = decodeURIComponent(url.pathname.split('/').pop()!)
     if (failYahoo) return json({}, 500)
@@ -262,6 +271,24 @@ describe('backend local', () => {
     expect(pb.totals.cost_clp).toBeCloseTo(pa.totals.cost_clp, 6)
     expect(pb.positions.map((p) => [p.symbol, p.quantity])).toEqual(pa.positions.map((p) => [p.symbol, p.quantity]))
     expect((await b.importCsv(csv, false)).duplicates).toBe(3)
+  })
+
+  it('buscar símbolos y seguir un índice sin poder comprarlo', async () => {
+    const b = await make()
+    await b.refresh()
+    const r = await b.search('s&p 500')
+    expect(r.results.map((x) => x.symbol)).toEqual(['^GSPC', 'SPY', 'SPXL']) // las opciones se descartan
+    const by = Object.fromEntries(r.results.map((x) => [x.symbol, x]))
+    expect(by.SPY).toMatchObject({ kind_label: 'ETF', market: 'US', note: null, in_watchlist: true })
+    expect(by['^GSPC'].note).toMatch(/índice/)
+    expect(by.SPXL.note).toMatch(/apalancado/)
+    const q = await b.addSymbol('^gspc')
+    expect(q).toMatchObject({ symbol: '^GSPC', kind: 'INDEX', price: 6800 })
+    expect((await b.signal('^GSPC')).strategies).toHaveLength(4) // se puede analizar
+    await expect(b.addTransaction({ symbol: '^GSPC', side: 'compra', quantity: 1, price: 6800, date: '2026-06-01' }))
+      .rejects.toMatchObject({ status: 422, message: expect.stringMatching(/ETF/) })
+    const c = await b.contribution(1_000_000)
+    expect(c.excluded.find((e) => e.symbol === '^GSPC')?.reason).toMatch(/índice/)
   })
 
   it('backtest e historia con indicadores', async () => {

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { api, type Period } from '../api'
 import { money } from '../format'
+import { KIND_LABELS } from '../core/catalog'
+import { MARKET_NAMES } from '../core/market'
 import { usePolling, type ChartColors } from '../hooks'
 import type { QuoteView } from '../types'
 import { BacktestPanel } from './BacktestPanel'
@@ -11,7 +13,6 @@ import { ScoreChart } from './ScoreChart'
 import { SignalCard } from './SignalCard'
 
 const PERIODS: [Period, string][] = [['3m', '3M'], ['6m', '6M'], ['1y', '1A'], ['2y', '2A'], ['5y', '5A'], ['10y', '10A']]
-const MARKET = { CL: 'Bolsa de Santiago', US: 'EE.UU.', FX: 'Divisas' } as const
 
 function PeriodPicker({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
   return (
@@ -58,7 +59,8 @@ export function Detail({ symbol, quote, colors, refreshMs }: {
         <div className="hero-title">
           <h2 id="hero-title">{symbol}</h2>
           <span className="muted">{q?.name ?? ''}</span>
-          {q && <span className="chip">{MARKET[q.market]}</span>}
+          {q && <span className="chip">{MARKET_NAMES[q.market]}</span>}
+          {q?.kind && <span className="chip">{KIND_LABELS[q.kind] ?? q.kind}</span>}
         </div>
         <div className="hero">
           <span className="price num">{money(q?.price, currency)}</span>

@@ -1,8 +1,9 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { api } from '../api'
 import { price } from '../format'
-import type { QuoteView, Signal } from '../types'
+import type { Market, QuoteView, Signal } from '../types'
 import { Change, FreshnessBadge, SignalBadge } from './Badges'
+import { SymbolSearch } from './SymbolSearch'
 
 interface Props {
   quotes: QuoteView[] | null
@@ -13,30 +14,18 @@ interface Props {
   error: string | null
 }
 
-const MARKET = { CL: 'Chile', US: 'Internacional', FX: 'Divisas' } as const
+const GROUPS: [Market, string][] = [
+  ['CL', 'Chile'], ['US', 'EE.UU.'], ['GLB', 'Futuros y divisas'], ['CRY', 'Cripto'], ['OTHER', 'Otras bolsas'], ['FX', 'Dólar'],
+]
 
 export function Watchlist({ quotes, signals, selected, onSelect, onChanged, error }: Props) {
-  const [symbol, setSymbol] = useState('')
-  const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const bySymbol = new Map((signals ?? []).map((s) => [s.symbol, s]))
 
-  async function add(e: FormEvent) {
-    e.preventDefault()
-    const s = symbol.trim()
-    if (!s) return
-    setBusy(true)
-    setMsg(null)
-    try {
-      const q = await api.addSymbol(s)
-      setSymbol('')
-      await onChanged() // recargar antes de seleccionar: si no, el símbolo aún no está en la lista
-      onSelect(q.symbol)
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
+  async function add(symbol: string) {
+    const q = await api.addSymbol(symbol) // los errores los muestra el buscador
+    await onChanged() // recargar antes de seleccionar: si no, el símbolo aún no está en la lista
+    onSelect(q.symbol)
   }
 
   async function remove(sym: string) {
@@ -56,7 +45,7 @@ export function Watchlist({ quotes, signals, selected, onSelect, onChanged, erro
     }
   }
 
-  const groups = (['CL', 'US'] as const).map((m) => ({ m, rows: (quotes ?? []).filter((q) => q.market === m) }))
+  const groups = GROUPS.map(([m, label]) => ({ m, label, rows: (quotes ?? []).filter((q) => q.market === m) }))
 
   return (
     <section className="card" aria-labelledby="wl-title">
@@ -64,21 +53,7 @@ export function Watchlist({ quotes, signals, selected, onSelect, onChanged, erro
         <h2 id="wl-title">Watchlist</h2>
         <span className="muted small">{quotes ? `${quotes.length} símbolos` : ''}</span>
       </div>
-      <form className="wl-add" onSubmit={add}>
-        <label className="sr-only" htmlFor="add-symbol">Agregar símbolo</label>
-        <input
-          id="add-symbol"
-          className="input"
-          placeholder="Agregar: FALABELLA.SN, QQQ…"
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          disabled={busy}
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <button className="btn primary" disabled={busy || !symbol.trim()}>{busy ? 'Validando…' : 'Agregar'}</button>
-      </form>
-      <p className="muted small" style={{ margin: '0 0 8px' }}>Chile usa el sufijo .SN (p. ej. SQM-B.SN).</p>
+      <SymbolSearch watchlist={(quotes ?? []).map((q) => q.symbol)} onAdd={add} />
       {msg && <p className="error" role="alert">{msg}</p>}
       {error && <p className="error" role="alert">{error}</p>}
       {!quotes && !error && <p className="muted">Cargando…</p>}
@@ -95,7 +70,7 @@ export function Watchlist({ quotes, signals, selected, onSelect, onChanged, erro
           {groups.filter((g) => g.rows.length).map((g) => (
             <tbody key={g.m}>
               <tr>
-                <td colSpan={4} className="muted small" style={{ paddingTop: 10, fontWeight: 600 }}>{MARKET[g.m]}</td>
+                <td colSpan={4} className="muted small" style={{ paddingTop: 10, fontWeight: 600 }}>{g.label}</td>
               </tr>
               {g.rows.map((q) => {
                 const s = bySymbol.get(q.symbol)

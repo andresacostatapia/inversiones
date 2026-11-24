@@ -10,10 +10,13 @@ export interface Freshness {
   age_minutes: number | null
 }
 
+export type Market = 'CL' | 'US' | 'FX' | 'GLB' | 'CRY' | 'OTHER'
+
 export interface QuoteView {
   symbol: string
   name: string | null
-  market: 'CL' | 'US' | 'FX'
+  market: Market
+  kind?: string | null
   currency: string | null
   price: number | null
   prev_close: number | null
@@ -203,7 +206,7 @@ export type RiskStatus = 'ok' | 'revisar' | 'vender' | 'sin_precio'
 export interface PositionRow {
   symbol: string
   name: string | null
-  market: 'CL' | 'US'
+  market: Market
   bucket: 'CL' | 'INTL'
   currency: string
   quantity: number

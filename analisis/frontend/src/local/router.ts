@@ -76,6 +76,7 @@ export async function localRequest(path: string, init?: RequestInit): Promise<un
       if (a === 'transactions') return b.transactions()
       if (a === 'alerts') return b.alerts()
       if (a === 'profile') return b.profile()
+      if (a === 'search') return b.search(q('q') ?? '')
     }
     if (method === 'POST') {
       if (a === 'watchlist') return b.addSymbol(body.symbol)

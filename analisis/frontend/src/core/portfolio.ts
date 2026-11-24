@@ -10,6 +10,33 @@ export const bucketOf = (symbol: string): 'CL' | 'INTL' => (marketOf(symbol) ===
 
 export class InvalidTransaction extends Error {}
 
+const SUPPORTED_CURRENCIES = ['CLP', 'USD']
+// ETF apalancados o inversos, detectados por el nombre (misma expresión que portfolio.py).
+const LEVERAGE_RE = /\b[2-5](?:[.,]\d)?x\b|\bultra(?:pro|short)?\b|leveraged|\binverse\b|\b-[1-5]x\b|\bshort (?:s&p|qqq|dow|russell|nasdaq)/i
+
+/** Si el perfil permite COMPRAR el instrumento: null = sí; un texto = por qué no (igual que investability en Python). */
+export function investability(symbol: string, kind?: string | null, currency?: string | null, name?: string | null,
+  allowDerivatives = false, allowLeverage = false, allowShort = false): string | null {
+  const s = symbol.toUpperCase()
+  const k = (kind ?? '').toUpperCase()
+  if (k === 'INDEX' || s.startsWith('^')) {
+    return 'Es un índice: no se compra directamente. Usa un ETF que lo replique '
+      + '(p. ej. SPY, VOO o IVV para el S&P 500; QQQ para el Nasdaq 100).'
+  }
+  if ((k === 'FUTURE' || k === 'OPTION' || s.endsWith('=F')) && !allowDerivatives) {
+    return 'Es un futuro (derivado) y tu perfil no permite derivados. Para oro, plata, cobre o petróleo '
+      + 'usa un ETF: GLD o IAU, SLV, CPER, USO.'
+  }
+  if (k === 'CURRENCY' || s.endsWith('=X')) return 'Es un tipo de cambio: solo sirve para análisis.'
+  if (currency && !SUPPORTED_CURRENCIES.includes(currency.toUpperCase())) {
+    return `Cotiza en ${currency.toUpperCase()}: la cartera por ahora solo valoriza en CLP y USD.`
+  }
+  if (name && LEVERAGE_RE.test(name) && !(allowLeverage && allowShort)) {
+    return 'Parece un ETF apalancado o inverso: tu perfil no permite apalancamiento ni posiciones cortas.'
+  }
+  return null
+}
+
 export interface Tx {
   symbol: string
   side: 'compra' | 'venta'
@@ -183,6 +210,7 @@ export interface Candidate {
   name?: string | null
   risk?: string | null
   drawdown_pct?: number | null
+  blocked?: string | null // motivo por el que el perfil no permite comprarlo
 }
 
 export interface ContributionLine {
@@ -219,6 +247,7 @@ export function suggestContribution(amountClp: number, bucketValues: Record<stri
   for (const b of ['CL', 'INTL']) shares[b] = sd > EPS ? deficits[b] / sd : target[b] ?? 0
 
   const exclusion = (c: Candidate): string | null => {
+    if (c.blocked) return c.blocked
     if (c.risk === 'vender') return `caída de ${comma1(c.drawdown_pct ?? 0)} % bajo el umbral de venta`
     if (c.signal === 'VENDER') return 'señal VENDER'
     if (!c.signal || !(c.signal in SIGNAL_WEIGHT)) return 'sin señal (falta historia)'

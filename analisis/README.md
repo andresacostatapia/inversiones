@@ -185,6 +185,7 @@ los precios cada 60 s mientras su mercado esté abierto (los feriados se respeta
 | GET | `/api/watchlist` | Precios de la watchlist con su etiqueta de frescura |
 | POST | `/api/watchlist` `{"symbol": "FALABELLA.SN"}` | Agrega un símbolo (valida que tenga datos; 404 si no) |
 | DELETE | `/api/watchlist/{symbol}` | Lo quita |
+| GET | `/api/search?q=oro` | Busca símbolos por nombre o código; dice el mercado y si tu perfil permite comprarlo |
 | GET | `/api/quotes/{symbol}` | Precio de un símbolo |
 | GET | `/api/instruments/{symbol}/history?period=1y` | Velas diarias + todos los indicadores (`1m` … `10y`, `max`) |
 | GET | `/api/instruments/{symbol}/indicators` | Último valor de cada indicador + métricas básicas |
@@ -225,7 +226,19 @@ En `http://127.0.0.1:8000` (después de `npm run build`):
 - **Aviso fijo** arriba: «Herramienta educativa, no es asesoría financiera».
 - **Barra superior**: estado de la Bolsa de Santiago y de EE.UU. (abierta hasta / abre a), dólar, hora del último
   ciclo del servidor, botón **Actualizar** y tema claro/oscuro/sistema.
-- **Watchlist** agrupada en Chile / Internacional: precio, variación del día, **frescura del dato con su hora**
+- **Buscador de símbolos** sobre la watchlist: escribe un nombre o código («nvidia», «oro», «s&p 500», «cobre»,
+  «samsung», «FALABELLA.SN»). Primero muestra un catálogo propio con nombres en español y después los resultados de
+  Yahoo. Cada resultado indica su tipo (acción, ETF, índice, futuro, cripto) y su mercado. **Populares** abre el
+  catálogo por categorías: ETF de índices, oro y materias primas, índices, grandes empresas de EE.UU., Chile, otras
+  bolsas y cripto.
+  - **Solo análisis**: se puede seguir y ver su señal, pero tu perfil (`risk_profile`) no permite comprarlo: índices
+    (`^GSPC`: usa SPY, VOO o IVV), futuros (`GC=F`: para oro usa GLD o IAU), tipos de cambio, ETF apalancados o
+    inversos (TQQQ, SQQQ…) y acciones en monedas que la cartera aún no convierte (solo CLP y USD; por ejemplo,
+    Samsung en Corea `005930.KS`, pero sí `SMSN.IL` en Londres, en dólares). La cartera rechaza esas compras y el
+    reparto del aporte las excluye.
+  - Horarios: futuros y divisas operan casi 24 h de lunes a viernes, las criptomonedas 24/7, y en otras bolsas se
+    muestra la hora del último precio sin decir «abierto» o «cerrado».
+- **Watchlist** agrupada por mercado (Chile, EE.UU., futuros y divisas, cripto, otras bolsas): precio, variación del día, **frescura del dato con su hora**
   (Tiempo real / Retraso / Cerrado / Desactualizado), señal, puntaje y confianza, y aviso si la señal cambió desde
   el día anterior. Se agregan símbolos escribiéndolos (se validan contra el proveedor) y se quitan con ×.
 - **Detalle** del símbolo seleccionado (la URL `#SQM-B.SN` lo deja enlazable):

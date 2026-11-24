@@ -36,12 +36,24 @@ class MissingApiKey(NotSupported):
 
 
 def market_of(symbol: str) -> str:
-    """Mercado según el símbolo: CL (Bolsa de Santiago, sufijo .SN), FX (divisas) o US."""
+    """Mercado según el símbolo de Yahoo:
+    CL  Bolsa de Santiago (.SN)            US   EE.UU. (sin sufijo) e índices (^GSPC)
+    FX  dólar USD/CLP (horario de Santiago) GLB  futuros (=F) y otras divisas (=X): casi 24 h, lunes a viernes
+    CRY criptomonedas (BTC-USD): 24/7       OTHER otras bolsas (.KS Corea, .L Londres, .TO Toronto…)
+    """
     s = symbol.upper()
     if s.endswith(".SN"):
         return "CL"
-    if s.endswith("=X") or s == "USDCLP":
+    if s in ("USDCLP", "CLP=X"):
         return "FX"
+    if s.endswith("=F") or s.endswith("=X"):
+        return "GLB"
+    if s.endswith(("-USD", "-USDT", "-EUR")):
+        return "CRY"
+    if s.startswith("^"):
+        return "US"
+    if "." in s:
+        return "OTHER"
     return "US"
 
 
@@ -73,6 +85,8 @@ class Quote:
     day_low: float | None = None
     day_open: float | None = None
     volume: float | None = None
+    kind: str | None = None          # tipo según Yahoo: EQUITY, ETF, INDEX, FUTURE, CURRENCY, CRYPTOCURRENCY…
+    tz: str | None = None            # zona horaria de la bolsa (fecha de la sesión)
 
     @property
     def change_pct(self) -> float | None:

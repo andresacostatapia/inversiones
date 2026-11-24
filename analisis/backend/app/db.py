@@ -20,6 +20,7 @@ class Instrument(Base):
     market: Mapped[str] = mapped_column(String(4))  # CL / US / FX
     currency: Mapped[str | None] = mapped_column(String(8))
     exchange: Mapped[str | None] = mapped_column(String(60))
+    kind: Mapped[str | None] = mapped_column(String(20))  # EQUITY, ETF, INDEX, FUTURE, CURRENCY, CRYPTOCURRENCY…
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -142,7 +143,24 @@ def make_engine(path: Path | str):
         cur.close()
 
     Base.metadata.create_all(engine)
+    _migrate(engine)
     return engine
+
+
+# Columnas agregadas después de la primera versión: create_all no modifica tablas existentes.
+ADDED_COLUMNS = {"instruments": {"kind": "VARCHAR(20)"}}
+
+
+def _migrate(engine) -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, cols in ADDED_COLUMNS.items():
+            have = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl in cols.items():
+                if name not in have:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 def make_session_factory(engine):

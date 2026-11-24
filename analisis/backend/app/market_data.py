@@ -21,8 +21,9 @@ from .providers.router import ProviderRouter
 
 log = logging.getLogger(__name__)
 
-EXCHANGE_TZ = {"CL": "America/Santiago", "US": "America/New_York", "FX": "UTC"}
-SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-=^]{0,19}$")
+EXCHANGE_TZ = {"CL": "America/Santiago", "US": "America/New_York", "FX": "UTC", "GLB": "America/New_York",
+               "CRY": "UTC", "OTHER": "UTC"}
+SYMBOL_RE = re.compile(r"^[A-Z0-9^][A-Z0-9.\-=^]{0,19}$")  # ^ al inicio: índices (^GSPC)
 # Las velas armadas con el precio en vivo llevan este sufijo en `source` hasta que la historia oficial las reemplaza.
 LIVE_SUFFIX = ":vivo"
 
@@ -115,6 +116,7 @@ class MarketData:
             inst.name = q.name or inst.name
             inst.currency = q.currency or inst.currency
             inst.exchange = q.exchange or inst.exchange
+            inst.kind = q.kind or inst.kind
             inst.updated_at = utcnow()
             s.merge(inst)
             s.commit()
@@ -124,7 +126,7 @@ class MarketData:
 
     def _update_today_bar(self, q: Quote, market: str) -> None:
         """La vela del día se arma con el precio en vivo; la historia oficial la reemplaza al cierre."""
-        d = session_date(q.as_of, market)
+        d = (as_utc(q.as_of).astimezone(ZoneInfo(q.tz)).date() if q.tz else session_date(q.as_of, market))
         with self.Session() as s:
             bar = s.get(PriceBar, (q.symbol, d))
             if bar is None:
@@ -303,6 +305,7 @@ class MarketData:
             stale_after_minutes=self.cfg.data.stale_after_minutes,
             tz=self.cfg.general.timezone,
             daily=bool(q and q.source and "observado" in q.source),
+            hours_known=market != "OTHER",
         )
         price = q.price if q else None
         prev = q.prev_close if q else None
@@ -310,6 +313,7 @@ class MarketData:
             "symbol": symbol,
             "name": inst.name if inst else None,
             "market": market,
+            "kind": inst.kind if inst else None,
             "currency": (q.currency if q else None) or (inst.currency if inst else None),
             "price": price,
             "prev_close": prev,

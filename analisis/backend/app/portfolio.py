@@ -14,6 +14,7 @@ Reglas de cálculo:
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import date
 
@@ -29,6 +30,36 @@ def bucket_of(symbol: str) -> str:
 
 class InvalidTransaction(ValueError):
     pass
+
+
+SUPPORTED_CURRENCIES = ("CLP", "USD")
+# ETF apalancados o inversos, detectados por el nombre ("UltraPro QQQ", "Daily … Bull 3X", "2X Long", "Short S&P500").
+LEVERAGE_RE = re.compile(
+    r"\b[2-5](?:[.,]\d)?x\b|\bultra(?:pro|short)?\b|leveraged|\binverse\b|\b-[1-5]x\b|\bshort (?:s&p|qqq|dow|russell|nasdaq)",
+    re.IGNORECASE,
+)
+
+
+def investability(symbol: str, kind: str | None = None, currency: str | None = None, name: str | None = None,
+                  allow_derivatives: bool = False, allow_leverage: bool = False, allow_short: bool = False) -> str | None:
+    """Si el instrumento se puede COMPRAR según el perfil de riesgo. None = sí; un texto = por qué no.
+    Todo se puede seguir y analizar en la watchlist; esto solo limita la cartera y el reparto de aportes."""
+    s = symbol.upper()
+    k = (kind or "").upper()
+    if k == "INDEX" or s.startswith("^"):
+        return ("Es un índice: no se compra directamente. Usa un ETF que lo replique "
+                "(p. ej. SPY, VOO o IVV para el S&P 500; QQQ para el Nasdaq 100).")
+    if k in ("FUTURE", "OPTION") or s.endswith("=F"):
+        if not allow_derivatives:
+            return ("Es un futuro (derivado) y tu perfil no permite derivados. Para oro, plata, cobre o petróleo "
+                    "usa un ETF: GLD o IAU, SLV, CPER, USO.")
+    if k == "CURRENCY" or s.endswith("=X"):
+        return "Es un tipo de cambio: solo sirve para análisis."
+    if currency and currency.upper() not in SUPPORTED_CURRENCIES:
+        return f"Cotiza en {currency.upper()}: la cartera por ahora solo valoriza en CLP y USD."
+    if name and LEVERAGE_RE.search(name) and not (allow_leverage and allow_short):
+        return "Parece un ETF apalancado o inverso: tu perfil no permite apalancamiento ni posiciones cortas."
+    return None
 
 
 @dataclass
@@ -210,6 +241,7 @@ class Candidate:
     name: str | None = None
     risk: str | None = None       # estado de la posición: ok / revisar / vender (las reglas de riesgo mandan)
     drawdown_pct: float | None = None
+    blocked: str | None = None    # motivo por el que el perfil no permite comprarlo (índice, futuro, moneda…)
 
     @property
     def bucket(self) -> str:
@@ -267,6 +299,8 @@ def suggest_contribution(amount_clp: float, bucket_values: dict[str, float], can
     shares = {b: (deficits[b] / sd if sd > EPS else target.get(b, 0)) for b in BUCKETS}
 
     def exclusion(c: Candidate) -> str | None:
+        if c.blocked:
+            return c.blocked
         # Las reglas de riesgo mandan sobre la señal técnica: no se promedia a la baja una posición en zona de venta.
         if c.risk == "vender":
             return f"caída de {c.drawdown_pct:.1f} % bajo el umbral de venta".replace(".", ",")

@@ -14,6 +14,7 @@ import type {
   Transaction,
 } from './types'
 import { isNative } from './local/net'
+import type { SearchResult } from './core/catalog'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -63,6 +64,7 @@ export const api = {
   status: () => request<Status>('/status'),
   watchlist: () => request<QuoteView[]>('/watchlist'),
   addSymbol: (symbol: string) => request<QuoteView>('/watchlist', { method: 'POST', body: JSON.stringify({ symbol }) }),
+  search: (q: string) => request<{ query: string; results: SearchResult[] }>(`/search?q=${encodeURIComponent(q)}`),
   removeSymbol: (symbol: string) => request<{ removed: string }>(`/watchlist/${encodeURIComponent(symbol)}`, { method: 'DELETE' }),
   fx: () => request<QuoteView>('/fx'),
   signals: () => request<{ disclaimer: string; signals: Signal[] }>('/signals'),

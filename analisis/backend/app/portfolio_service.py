@@ -21,6 +21,7 @@ from .portfolio import (
     PriceInfo,
     Tx,
     build_positions,
+    investability,
     suggest_contribution,
     value_portfolio,
 )
@@ -116,6 +117,10 @@ class PortfolioService:
         # Validar primero contra lo ya registrado (sin red), para no agregar el símbolo si la operación es inválida.
         build_positions(self._all_tx() + [Tx(symbol, t.side, t.quantity, t.price, "?", t.date, t.fee, 1.0)])
         currency = self._ensure_symbol(symbol)
+        if t.side == "compra":
+            reason = self._blocked(symbol)
+            if reason:
+                raise InvalidTransaction(f"{symbol}: {reason}")
         fx, fx_src = (t.fx_rate, "manual") if t.fx_rate else self._fx_for(t.date)
         row = Transaction(symbol=symbol, side=t.side, quantity=t.quantity, price=t.price, currency=currency,
                           date=t.date, fee=t.fee, fx_rate=fx, fx_source=fx_src, note=t.note, created_at=utcnow())
@@ -139,6 +144,12 @@ class PortfolioService:
             s.execute(delete(Transaction).where(Transaction.id == tx_id))
             s.commit()
         return True
+
+    def _blocked(self, symbol: str) -> str | None:
+        q = self.md.quote_view(symbol)
+        rp = self.cfg.risk_profile
+        return investability(symbol, q.get("kind"), q.get("currency"), q.get("name"),
+                             rp.allow_derivatives, rp.allow_leverage, rp.allow_short)
 
     # --- valorización ---------------------------------------------------------
     def fx_now(self) -> float | None:
@@ -190,7 +201,8 @@ class PortfolioService:
             price_clp = info.price * fx if cur == "USD" else info.price
             pos = held.get(sym)
             cands.append(Candidate(sym, info.price, cur, price_clp, self._latest_label(sym), pos is not None, info.name,
-                                   pos["status"] if pos else None, pos["drawdown_pct"] if pos else None))
+                                   pos["status"] if pos else None, pos["drawdown_pct"] if pos else None,
+                                   self._blocked(sym)))
         res = suggest_contribution(amount, bucket_values, cands, rp.target_allocation, rp.fractional_shares)
         out = res.to_dict()
         out["fx"] = fx

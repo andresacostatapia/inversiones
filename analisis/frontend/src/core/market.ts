@@ -3,13 +3,20 @@
 
 import calendars from './calendars.json'
 
-export type Market = 'CL' | 'US' | 'FX'
-export const MARKET_NAMES: Record<Market, string> = { CL: 'Bolsa de Santiago', US: 'EE.UU.', FX: 'Dólar (USD/CLP)' }
+export type Market = 'CL' | 'US' | 'FX' | 'GLB' | 'CRY' | 'OTHER'
+export const MARKET_NAMES: Record<Market, string> = {
+  CL: 'Bolsa de Santiago', US: 'EE.UU.', FX: 'Dólar (USD/CLP)', GLB: 'Futuros y divisas', CRY: 'Cripto', OTHER: 'Otras bolsas',
+}
 
+/** Mercado según el símbolo de Yahoo (misma regla que market_of en Python). */
 export function marketOf(symbol: string): Market {
   const s = symbol.toUpperCase()
   if (s.endsWith('.SN')) return 'CL'
-  if (s.endsWith('=X') || s === 'USDCLP') return 'FX'
+  if (s === 'USDCLP' || s === 'CLP=X') return 'FX'
+  if (s.endsWith('=F') || s.endsWith('=X')) return 'GLB'
+  if (s.endsWith('-USD') || s.endsWith('-USDT') || s.endsWith('-EUR')) return 'CRY'
+  if (s.startsWith('^')) return 'US'
+  if (s.includes('.')) return 'OTHER'
   return 'US'
 }
 
@@ -44,13 +51,27 @@ const CALS: Record<'CL' | 'US', Calendar> = {
   CL: decode(calendars.XSGO as unknown as Encoded),
   US: decode(calendars.XNYS as unknown as Encoded),
 }
-const calFor = (m: Market) => CALS[m === 'FX' ? 'CL' : m]
+const calFor = (m: 'CL' | 'US' | 'FX') => CALS[m === 'FX' ? 'CL' : m]
+const hasCalendar = (m: Market): m is 'CL' | 'US' | 'FX' => m === 'CL' || m === 'US' || m === 'FX'
+
+/** Futuros y divisas (CME Globex): domingo 17:00 a viernes 16:00 hora de Chicago, con pausa de 16:00 a 17:00. */
+function globexOpen(now: Date): boolean {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short',
+    hour: '2-digit', hourCycle: 'h23' }).formatToParts(now).map((x) => [x.type, x.value]))
+  const wd = p.weekday
+  const h = Number(p.hour)
+  if (wd === 'Sat' || (wd === 'Sun' && h < 17) || (wd === 'Fri' && h >= 16)) return false
+  return h !== 16
+}
 
 const DAY = 864e5
 const MIN = 6e4
 
 /** ¿Está abierto en ese instante? El dólar sigue el horario de Santiago (fuera de él casi no se mueve). */
 export function isOpen(market: Market, now: Date = new Date()): boolean {
+  if (market === 'GLB') return globexOpen(now)
+  if (market === 'CRY') return true
+  if (!hasCalendar(market)) return false // otras bolsas: horario desconocido
   const cal = calFor(market)
   const t = Math.floor(now.getTime() / MIN) * MIN
   const day = Math.floor(t / DAY)
@@ -67,6 +88,7 @@ export function sessionInfo(market: Market, now: Date = new Date()) {
   const info: { market: Market; name: string; open: boolean; closes_at?: string; next_open?: string } = {
     market, name: MARKET_NAMES[market], open,
   }
+  if (!hasCalendar(market)) return info
   const cal = calFor(market)
   const t = now.getTime()
   if (open) {
@@ -122,7 +144,7 @@ function ageText(m: number): string {
 }
 
 export function freshness(asOf: Date | null, opts: { realtime: boolean; marketOpen: boolean; now?: Date;
-  staleAfterMinutes?: number; tz?: string; daily?: boolean }): Freshness {
+  staleAfterMinutes?: number; tz?: string; daily?: boolean; hoursKnown?: boolean }): Freshness {
   const now = opts.now ?? new Date()
   const tz = opts.tz ?? 'America/Santiago'
   if (!asOf) return { kind: 'sin_datos', label: 'Sin datos', as_of_local: null, age_minutes: null }
@@ -137,6 +159,9 @@ export function freshness(asOf: Date | null, opts: { realtime: boolean; marketOp
   if (opts.daily) {
     kind = 'diario'
     label = `Dato diario oficial del ${p.day}/${p.month}`
+  } else if (opts.hoursKnown === false) {
+    kind = 'cierre'
+    label = `Último precio ${when} · horario de esa bolsa no disponible`
   } else if (!opts.marketOpen) {
     kind = 'cierre'
     label = `Mercado cerrado · último precio ${when}`
