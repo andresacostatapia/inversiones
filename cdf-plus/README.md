@@ -19,6 +19,11 @@ Monitorea en paralelo 6 activos:
 
 ## 1. Instalación
 
+> **Windows, forma rápida:** instala Python (marcando *Add Python to PATH*) y haz **doble clic en
+> `iniciar.bat`**. Crea el entorno, instala todo y abre la app. Úsalo también las siguientes veces.
+
+### Instalación manual
+
 Requisitos: Python 3.11 o superior.
 
 ```bash
@@ -44,9 +49,10 @@ cp .env.example .env      # en Windows: copy .env.example .env
 ## 3. Ejecución
 
 ```bash
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
+(Usar `python -m streamlit` evita el error *"streamlit no se reconoce como un comando"* en Windows.)
 Se abre en `http://localhost:8501`.
 
 ---
