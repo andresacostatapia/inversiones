@@ -76,3 +76,20 @@ alerts:
   data_error_minutes: 30            # avisar si un precio lleva este tiempo fallando con el mercado abierto
   channels: [telegram, email]       # además de la UI; solo se usan si sus credenciales están en .env
   notify_min_severity: warning      # info / warning / critical: desde qué gravedad se envía por Telegram o email
+
+# --- Copiloto CFD (XTB xStation) ---
+# Módulo APARTE de la cartera: aquí sí hay apalancamiento y ventas en corto, pero solo como análisis; la app nunca
+# envía órdenes. Capital, riesgo, stop/objetivo, temporalidad y alertas se cambian en la pestaña CFD.
+cfd:
+  enabled: true
+  use_twelvedata: true              # si hay TWELVEDATA_API_KEY: oro y plata al contado casi en tiempo real
+  twelvedata_timeframes: [1m, 5m, 15m]
+  twelvedata_per_minute: 6          # cupo propio (el plan gratis trae 8/min y 800/día para toda la app)
+  twelvedata_per_day: 500           # al agotarse se sigue con Yahoo (con su propio desfase de calibración)
+  yahoo_per_minute: 40
+  scan_seconds: 60                  # cada cuánto se revisan las alertas (solo si están activadas en la pestaña)
+  alert_channels: [telegram]
+  # Corrige aquí el contrato si XTB lo cambia (también se puede desde la pestaña CFD):
+  # assets:
+  #   US500: {value_per_point: 50, spread_points: 0.5, margin_pct: 5}
+  #   GOLD:  {twelvedata: null}       # null = no usar Twelve Data para este activo

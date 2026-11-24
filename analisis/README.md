@@ -331,6 +331,74 @@ pestaña y un aviso arriba si hay alguna crítica sin leer.
   [`.env.example`](.env.example)) y reinicia. Por defecto solo se envían las de gravedad «atención» o mayor; se
   ajusta en `alerts.notify_min_severity`. El botón **Enviar prueba** verifica la configuración.
 
+## Copiloto CFD (XTB xStation)
+
+Pestaña **CFD** del dashboard (navegador y app de Windows; la app Android no la trae). Es un módulo **aparte** de la
+cartera: aquí se analizan CFD apalancados con largos y cortos, pero la app **nunca envía órdenes**: arma un ticket y
+tú operas a mano en xStation. Herramienta educativa, no es asesoría financiera.
+
+**Activos:** GOLD, SILVER, US500, US100, US30 y US2000. **Temporalidades:** 1 min, 5 min, 15 min, 1 hora y 4 horas
+(más 1 día como contexto).
+
+**Datos y su retraso.** Por defecto, Yahoo: futuros continuos (GC=F, SI=F, ES=F, NQ=F, YM=F, RTY=F), casi 24 horas,
+con **~10 minutos de retraso** (se muestra en cada activo). En 1 y 5 minutos eso pesa: confirma siempre el precio en
+xStation. Con `TWELVEDATA_API_KEY` en `.env`, el oro y la plata vienen de Twelve Data al contado (XAU/USD, XAG/USD)
+casi en tiempo real en 1, 5 y 15 min. El plan gratis alcanza para unas horas al día; después la app sigue con Yahoo.
+Las velas de 4 horas se arman con las de 1 hora, alineadas a la sesión de CME (abre 17:00 hora de Chicago).
+
+**Puntaje (−100 a +100).** Solo con velas cerradas:
+- **Por temporalidad:**
+  - tendencia: precio vs EMA200, EMA20 vs EMA50, EMA50 vs EMA200;
+  - momento: RSI14 entre 55 y 70 alcista y entre 30 y 45 bajista (sobre 70 o bajo 30 resta: no perseguir);
+  - MACD 12/26/9 y su histograma.
+- **Combinación:** la temporalidad elegida pesa 50 %, la siguiente mayor 30 % y la otra 20 %.
+- **Filtro intermercado** (en 1 hora o más):
+  - clima risk-on/risk-off según los 4 índices frente al oro y la plata: ±10 a los índices, +10 a los metales en risk-off;
+  - amplitud: si el Russell 2000 no acompaña al S&P 500, −5 al alza de los índices;
+  - si el oro y la plata se confirman entre sí, ±5.
+- **Veredictos:** COMPRA FUERTE (≥ 70), COMPRA (≥ 30), NEUTRAL, VENTA (≤ −30) y VENTA FUERTE (≤ −70).
+- La tarjeta «Por qué este puntaje» muestra cada regla, si está a favor (✓) o en contra (✗), y sus puntos.
+
+**Calibrar con xStation.** El CFD de XTB no cotiza igual que el feed (futuro o contado), pero la diferencia es casi
+constante en el día.
+1. Escribe el precio que ves en xStation (el BID, el de los gráficos).
+2. La app guarda `desfase = precio_xtb − precio_feed`. Lo calcula contra la vela de 1 minuto del feed de **esa misma
+   hora**, no contra el último precio del feed, que tiene 10 minutos de retraso. Por eso queda «pendiente» unos minutos.
+3. Desde ahí, el gráfico, la entrada, el SL y el TP salen en precios de xStation.
+
+Recalibra cada día y tras el vencimiento de un futuro, cuando el desfase salta. Cada fuente tiene su propio desfase.
+
+**Ticket listo para XTB.**
+- Entrada = precio actual; SL = entrada ∓ k × ATR14 (1,5 por defecto); TP = entrada ± k × ATR14 (3,0 por defecto).
+- Lotes = riesgo en USD / (distancia del SL en puntos × valor del punto), redondeado **hacia abajo** a 0,01. Nunca
+  arriesga más de lo pedido.
+- Si ni 0,01 lotes cabe en tu riesgo, el ticket lo dice y muestra cuánto arriesgaría el lote mínimo.
+- También muestra el riesgo real, el objetivo, la relación R:R y un margen aproximado (ESMA: 5 % índices principales
+  y oro, 10 % plata y Russell 2000).
+- Si xStation ya se movió, conserva las **distancias** en puntos.
+
+| CFD | USD por punto (1 lote) | | CFD | USD por punto (1 lote) |
+|---|---|---|---|---|
+| GOLD | 100 (100 oz) | | US100 | 20 |
+| SILVER | 5000 (5000 oz) | | US30 | 5 |
+| US500 | 50 | | US2000 | 200 |
+
+Valores de la tabla de especificaciones de XTB. Se corrigen en la pestaña, en «Contrato por activo», o en
+`config.yaml` → `cfd.assets`. Ahí también se agrega el spread en puntos, que se suma al riesgo.
+
+**Alertas por Telegram.** Se activan en la pestaña, apagadas por defecto. Cada 60 s, con el mercado abierto, se
+revisan los 6 activos en tu temporalidad. Llega un aviso cuando el puntaje **entra** en ±70 (umbral ajustable), con el
+ticket. Hay un solo aviso por activo, vela y dirección; si la señal sigue fuerte, no se repite. Los avisos quedan
+también en la pestaña Alertas. Para recibirlos en el teléfono, configura `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`.
+
+**API:**
+- `GET /api/cfd/overview?tf=5m` (escáner)
+- `GET /api/cfd/assets/GOLD?tf=1m` (detalle, velas y reglas)
+- `PUT /api/cfd/settings`
+- `POST /api/cfd/calibrate` (`{"asset": "GOLD", "xtb_price": 2650.3}` o `{"asset": "GOLD", "manual_offset": -18.4}`)
+- `DELETE /api/cfd/calibrate/GOLD`
+- `POST /api/cfd/scan`
+
 ## Indicadores
 
 En [`backend/app/indicators.py`](backend/app/indicators.py), escritos en pandas, sin pandas-ta ni ta-lib:

@@ -124,6 +124,15 @@ class AlertRow(Base):
     notify_error: Mapped[str | None] = mapped_column(Text)
 
 
+class CfdState(Base):
+    """Estado del copiloto CFD: ajustes ("settings") y calibraciones ("calibration:GOLD"…), en JSON."""
+
+    __tablename__ = "cfd_state"
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 def make_engine(path: Path | str):
     url = "sqlite://" if str(path) == ":memory:" else f"sqlite:///{path}"
     if str(path) != ":memory:":

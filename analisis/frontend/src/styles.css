@@ -343,3 +343,51 @@ footer {
 .sr-cat { padding: 8px 10px 4px; }
 .sr-cat h3 { margin-top: 4px; }
 .sr-cat .sr-item button { padding: 6px 4px; }
+
+/* --- Copiloto CFD --- */
+.cfd { display: flex; flex-direction: column; gap: 16px; }
+.cfd-risk { margin: 0; }
+.cfd-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip.regime.risk-on { color: var(--gain); border-color: color-mix(in srgb, var(--gain) 40%, transparent); }
+.chip.regime.risk-off { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 40%, transparent); }
+.cfd-scan td { vertical-align: middle; }
+.cfd-scan td:first-child { max-width: none; width: auto; }
+.cfd-scan th.c, .cfd-scan td.c { text-align: center; }
+.nowrap { white-space: nowrap; }
+.bias, .bias-h { display: inline-block; width: 26px; text-align: center; }
+.bias { font-size: 13px; }
+.bias-h { font-size: 10px; }
+.score-cell { font-weight: 700; font-size: 15px; margin-bottom: 2px; }
+.cfd-layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 16px; align-items: start;
+}
+@media (max-width: 1000px) { .cfd-layout { grid-template-columns: minmax(0, 1fr); } }
+.cfd-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.cfd-form { display: flex; flex-direction: column; gap: 10px; }
+.cfd-field { display: flex; flex-direction: column; gap: 3px; font-size: 13px; min-width: 0; }
+.cfd-field.grow { flex: 1; }
+.cfd-input { display: flex; align-items: center; gap: 6px; }
+.cfd-input .input { flex: 1; }
+.cfd-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.input.tiny { width: 76px; padding: 4px 6px; }
+.cfd-adv summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.cfd-cal { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-top: 8px; }
+.row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ticket { border-width: 2px; }
+.ticket.buy { border-color: color-mix(in srgb, var(--gain) 55%, var(--line)); }
+.ticket.sell { border-color: color-mix(in srgb, var(--loss) 55%, var(--line)); }
+.ticket-side { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.ticket-lots { font-size: 15px; }
+.ticket-lots b { font-size: 24px; }
+.ticket-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
+.ticket-grid dt { color: var(--muted); }
+.ticket-grid dd { margin: 0; text-align: right; font-weight: 600; }
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px 20px; }
+.rule-group ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.rule-group li { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.rule-ico { width: 14px; flex: none; font-weight: 700; text-align: center; }
+.rule-text { flex: 1; min-width: 0; }
+.rule-pts { flex: none; font-weight: 650; }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.swatch.dashed { height: 0; border-top: 2px dashed; background: none; }
+.chip.regime { white-space: normal; }

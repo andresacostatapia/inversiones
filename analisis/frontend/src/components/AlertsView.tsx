@@ -11,6 +11,7 @@ export const SEVERITY: Record<Severity, { icon: string; label: string; cls: stri
 
 const KIND: Record<string, string> = {
   venta: 'Caída: vender', revision: 'Caída: revisar', senal: 'Cambio de señal', datos: 'Datos', prueba: 'Prueba',
+  cfd: 'Copiloto CFD',
 }
 
 export function AlertsView({ data, onChanged, onSelect }: {

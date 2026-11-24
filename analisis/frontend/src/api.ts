@@ -14,6 +14,7 @@ import type {
   Transaction,
 } from './types'
 import { isNative } from './local/net'
+import type { CfdCalibration, CfdDetail, CfdOverview, CfdSettings, CfdTf } from './cfdTypes'
 import type { SearchResult } from './core/catalog'
 
 export class ApiError extends Error {
@@ -87,6 +88,15 @@ export const api = {
     request<ImportResult>('/transactions/import', { method: 'POST', body: JSON.stringify({ csv, commit }) }),
   contribution: (amount_clp: number) =>
     request<ContributionResult>('/contribution', { method: 'POST', body: JSON.stringify({ amount_clp }) }),
+
+  // Copiloto CFD (solo con el servidor de Python: navegador y Windows)
+  cfdOverview: (tf?: CfdTf) => request<CfdOverview>(`/cfd/overview${tf ? `?tf=${tf}` : ''}`),
+  cfdDetail: (code: string, tf?: CfdTf) => request<CfdDetail>(`/cfd/assets/${encodeURIComponent(code)}${tf ? `?tf=${tf}` : ''}`),
+  cfdSaveSettings: (patch: Partial<CfdSettings>) =>
+    request<CfdSettings>('/cfd/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  cfdCalibrate: (body: { asset: string; xtb_price?: number; at?: string; manual_offset?: number }) =>
+    request<CfdCalibration>('/cfd/calibrate', { method: 'POST', body: JSON.stringify(body) }),
+  cfdClearCalibration: (code: string) => request<unknown>(`/cfd/calibrate/${encodeURIComponent(code)}`, { method: 'DELETE' }),
 
   // Alertas
   alerts: () => request<AlertsResponse>('/alerts'),

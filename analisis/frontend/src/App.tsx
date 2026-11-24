@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, LOCAL_MODE } from './api'
 import { AlertsView } from './components/AlertsView'
+import { CfdView } from './components/CfdView'
 import { ContributionCard } from './components/ContributionCard'
 import { Detail } from './components/Detail'
 import { PortfolioView } from './components/PortfolioView'
@@ -12,13 +13,14 @@ import { useChartColors, usePolling, useThemeSetting, type Theme } from './hooks
 const REFRESH_MS = 30_000
 const DISCLAIMER = 'Herramienta educativa, no es asesoría financiera.'
 
-type View = 'mercado' | 'cartera' | 'alertas'
+type View = 'mercado' | 'cartera' | 'alertas' | 'cfd'
 
-// Rutas: #/cartera, #/alertas, o #SIMBOLO (mercado con ese símbolo seleccionado).
+// Rutas: #/cartera, #/alertas, #/cfd (copiloto CFD), o #SIMBOLO (mercado con ese símbolo seleccionado).
 function parseHash(): { view: View; symbol: string | null } {
   const h = decodeURIComponent(window.location.hash.slice(1))
   if (h === '/cartera') return { view: 'cartera', symbol: null }
   if (h === '/alertas') return { view: 'alertas', symbol: null }
+  if (h === '/cfd' && !LOCAL_MODE) return { view: 'cfd', symbol: null }
   return { view: 'mercado', symbol: h ? h.toUpperCase() : null }
 }
 
@@ -119,7 +121,9 @@ export function App() {
   const quote = quotes.data?.find((q) => q.symbol === selected)
   const unread = alerts.data?.unread ?? 0
   const unreadCritical = alerts.data?.by_severity.critical ?? 0
-  const tabs: [View, string][] = [['mercado', 'Mercado'], ['cartera', 'Cartera'], ['alertas', 'Alertas']]
+  // El copiloto CFD necesita el servidor de Python (navegador y Windows); la app Android no lo trae.
+  const tabs: [View, string][] = [['mercado', 'Mercado'], ['cartera', 'Cartera'], ['alertas', 'Alertas'],
+    ...(LOCAL_MODE ? [] : [['cfd', 'CFD'] as [View, string]])]
 
   return (
     <>
@@ -201,6 +205,7 @@ export function App() {
           <AlertsView data={alerts.data} onChanged={alerts.reload} onSelect={openSymbol} />
         </div>
       )}
+      {route.view === 'cfd' && <CfdView colors={colors} />}
       <footer>{DISCLAIMER} Los datos pueden venir con retraso; revisa siempre la hora de cada precio.</footer>
     </>
   )

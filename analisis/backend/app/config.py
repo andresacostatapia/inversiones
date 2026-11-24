@@ -10,6 +10,8 @@ import yaml
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .cfd.assets import CfdConfig
+
 # analisis/  (backend/app/config.py -> parents[2])
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -116,6 +118,7 @@ class AppConfig(BaseModel):
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)
     risk_profile: RiskProfile = Field(default_factory=RiskProfile)
     alerts: AlertsConfig = Field(default_factory=AlertsConfig)
+    cfd: CfdConfig = Field(default_factory=CfdConfig)  # copiloto CFD (módulo aparte de la cartera)
 
     @property
     def database_path(self) -> Path:
