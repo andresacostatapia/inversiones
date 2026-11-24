@@ -240,3 +240,61 @@ MAX_RISK_PCT: Final[float] = 5.0
 # ---------------------------------------------------------------------------
 DEFAULT_ALERT_THRESHOLD: Final[float] = 70.0
 TELEGRAM_TIMEOUT_S: Final[float] = 10.0
+
+
+# ---------------------------------------------------------------------------
+# MetaTrader 5 · nombres de símbolo por bróker
+# ---------------------------------------------------------------------------
+# Cada bróker llama distinto a los CFDs (XAUUSD, US500.cash, NAS100, [DJI30]…).
+# El bot prueba estos alias en orden (ignorando mayúsculas, puntos y sufijos cortos como
+# ".cash", "m", "+"). Si tu bróker usa otro nombre, fíjalo en .env: MT5_SYMBOL_US500=SPX500
+MT5_SYMBOL_ALIASES: Final[dict[str, tuple[str, ...]]] = {
+    "GOLD": ("XAUUSD", "GOLD", "XAUUSDSPOT"),
+    "SILVER": ("XAGUSD", "SILVER", "XAGUSDSPOT"),
+    "US500": ("US500", "SPX500", "SP500", "USA500", "US500CASH", "SPX", "USSPX500"),
+    "US100": ("US100", "NAS100", "USTEC", "NDX100", "USA100", "US100CASH", "NASDAQ100", "USTECH100"),
+    "US30": ("US30", "DJ30", "WS30", "USA30", "DOW30", "DJI30", "US30CASH", "DJI"),
+    "US2000": ("US2000", "RUSSELL2000", "US2000CASH", "RUS2000", "USSC2000", "RTY2000", "RUSSELL"),
+}
+MT5_MAGIC: Final[int] = 26_11_2026          # Identifica las órdenes de CDF Plus en MT5
+MT5_DEVIATION_POINTS: Final[int] = 30       # Deslizamiento máximo aceptado (en puntos del símbolo)
+MT5_BARS: Final[dict[str, int]] = {"15m": 1500, "1h": 1500, "4h": 800}
+MT5_MAX_TICK_AGE_S: Final[int] = 300        # Tick más antiguo que esto → mercado cerrado
+
+# Spread típico en puntos de precio (para el modo papel y el backtest; el bot real usa el del bróker)
+TYPICAL_SPREAD: Final[dict[str, float]] = {
+    "GOLD": 0.35, "SILVER": 0.03, "US500": 0.6, "US100": 1.5, "US30": 3.0, "US2000": 0.5,
+}
+
+
+# ---------------------------------------------------------------------------
+# Bot de ejecución automática
+# ---------------------------------------------------------------------------
+BOT_MODES: Final[tuple[str, ...]] = ("paper", "demo", "real")
+BOT_REAL_CONFIRMATION: Final[str] = "SI_ENTIENDO_EL_RIESGO"
+BOT_STATE_FILE: Final[Path] = STATE_DIR / "bot_state.json"        # Lo escribe el bot, lo lee la app
+BOT_CONTROL_FILE: Final[Path] = STATE_DIR / "bot_control.json"    # Lo escribe la app, lo lee el bot
+BOT_LOG_FILE: Final[Path] = STATE_DIR / "bot_trades.jsonl"        # Historial de decisiones y órdenes
+PAPER_ACCOUNT_FILE: Final[Path] = STATE_DIR / "paper_account.json"
+
+
+@dataclass(frozen=True)
+class BotConfig:
+    """Parámetros del bot. Todos se pueden sobrescribir en .env (BOT_<NOMBRE>=valor)."""
+
+    mode: str = "paper"                   # paper | demo | real
+    entry_threshold: float = 70.0         # |score| mínimo para abrir
+    risk_pct: float = 0.5                 # % del equity arriesgado por operación
+    sl_atr_mult: float = DEFAULT_SL_ATR_MULT
+    tp_atr_mult: float = DEFAULT_TP_ATR_MULT
+    atr_tf: str = OPERATIONAL_TF
+    max_open_positions: int = 3           # Total de posiciones abiertas
+    max_index_positions: int = 2          # Los 4 índices están muy correlacionados
+    max_metal_positions: int = 1          # Oro y plata también
+    max_trades_per_day: int = 6
+    max_daily_loss_pct: float = 2.0       # Si el equity cae esto en el día → no abre más
+    max_spread_atr_ratio: float = 0.15    # Spread > 15 % del ATR → no entra
+    loop_seconds: int = 30                # Frecuencia de revisión
+    paper_balance: float = 10_000.0       # Saldo inicial del modo papel
+    data_source: str = "auto"             # auto | mt5 | feed (Twelve Data/yfinance)
+    notify_telegram: bool = True

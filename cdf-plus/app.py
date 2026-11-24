@@ -707,4 +707,12 @@ def main() -> None:
     )
 
 
-main()
+# ---------------------------------------------------------------------------
+# Navegación entre páginas
+# ---------------------------------------------------------------------------
+navigation = st.navigation([
+    st.Page(main, title="Copiloto", icon="📈", url_path="copiloto", default=True),
+    st.Page("views/backtest_page.py", title="Backtest", icon="🧪", url_path="backtest"),
+    st.Page("views/bot_page.py", title="Bot MT5", icon="🤖", url_path="bot"),
+])
+navigation.run()

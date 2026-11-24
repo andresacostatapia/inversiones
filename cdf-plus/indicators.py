@@ -308,6 +308,64 @@ def analyze_timeframe(df: pd.DataFrame | None, tf: str) -> TimeframeAnalysis:
 
 
 # ---------------------------------------------------------------------------
+# 1b. Versión vectorizada (backtest): mismas reglas, una puntuación por vela
+# ---------------------------------------------------------------------------
+def _cmp_vec(a: pd.Series, b: pd.Series) -> np.ndarray:
+    """Equivalente vectorial de `_cmp` (NaN → 0)."""
+    av, bv = a.to_numpy(dtype=float), b.to_numpy(dtype=float)
+    tol = 1e-9 * np.maximum(np.maximum(np.abs(av), np.abs(bv)), 1.0)
+    out = np.where(av - bv > tol, 1, np.where(bv - av > tol, -1, 0))
+    return np.where(np.isnan(av) | np.isnan(bv), 0, out)
+
+
+def tf_score_series(data: pd.DataFrame) -> pd.Series:
+    """
+    Sesgo -100..+100 de CADA vela de una temporalidad (requiere `add_indicators`).
+
+    Replica exactamente las reglas de `analyze_timeframe` (lo verifican los tests), de modo
+    que el backtest evalúa la misma estrategia que la app y el bot.
+    """
+    p, w = INDICATORS, TF_RULE_WEIGHTS
+    close = data["close"]
+    rsi_v = data["rsi"].fillna(50.0).to_numpy(dtype=float)
+    hist = data["macd_hist"]
+
+    pts_200 = w["ema200"] * _cmp_vec(close, data["ema200"])
+    cf, cs = _cmp_vec(data["ema20"], data["ema50"]), _cmp_vec(data["ema50"], data["ema200"])
+    pts_stack = np.select(
+        [(cf > 0) & (cs > 0), (cf < 0) & (cs < 0), cf > 0, cf < 0],
+        [w["ema_stack"], -w["ema_stack"], w["ema_stack"] * 0.4, -w["ema_stack"] * 0.4], 0.0)
+    pts_cross = w["macd_cross"] * _cmp_vec(data["macd"], data["macd_signal"])
+    slope = _cmp_vec(hist, hist.shift(1))
+    h = hist.to_numpy(dtype=float)
+    pts_hist = np.select(
+        [slope == 0, (slope > 0) & (h > 0), (slope < 0) & (h < 0), slope > 0],
+        [0.0, w["macd_hist"], -w["macd_hist"], w["macd_hist"] * 0.5], -w["macd_hist"] * 0.5)
+    pts_rsi = np.select(
+        [rsi_v > p.rsi_overbought, rsi_v < p.rsi_oversold, rsi_v > 50, rsi_v < 50],
+        [w["rsi"] * 0.3, -w["rsi"] * 0.3, w["rsi"], -w["rsi"]], 0.0)
+    pts_20 = w["ema20"] * _cmp_vec(close, data["ema20"])
+
+    total = pts_200 + pts_stack + pts_cross + pts_hist + pts_rsi + pts_20
+    return pd.Series(np.clip(total, -100.0, 100.0), index=data.index, name="tf_score")
+
+
+def technical_score_vec(s15: pd.Series, s1h: pd.Series, s4h: pd.Series) -> pd.Series:
+    """Equivalente vectorial de `technical_score` (series ya alineadas; NaN = sin datos)."""
+    b, th = config.SCORE_BLOCKS, config.TF_BIAS_THRESHOLD
+    a15, a1, a4 = (x.fillna(0.0).to_numpy(dtype=float) for x in (s15, s1h, s4h))
+
+    def sgn(x: np.ndarray) -> np.ndarray:
+        return np.where(x > th, 1, np.where(x < -th, -1, 0))
+
+    g15, g1, g4 = sgn(a15), sgn(a1), sgn(a4)
+    mtf = np.where((g1 != 0) & (g1 == g4) & (g1 == g15), b["mtf_align"] * g1,
+                   np.where((g1 != 0) & (g1 == g4), b["mtf_align"] * 0.5 * g1, 0.0))
+    total = a1 * b["operational"] / 100 + a4 * b["higher_tf"] / 100 + a15 * b["timing_tf"] / 100 + mtf
+    return pd.Series(np.clip(total, -100.0, 100.0), index=s1h.index, name="technical")
+
+
+# ---------------------------------------------------------------------------
 # 2. Score técnico combinado
 # ---------------------------------------------------------------------------
 def technical_score(tfs: dict[str, TimeframeAnalysis]) -> tuple[float, list[RuleResult]]:
@@ -373,14 +431,19 @@ def _trend_strength(tfs: dict[str, TimeframeAnalysis]) -> float | None:
 
 def build_intermarket(all_tfs: dict[str, dict[str, TimeframeAnalysis]]) -> IntermarketContext:
     """Evalúa el régimen Risk-On/Risk-Off y la amplitud entre índices USA y metales."""
-    ctx = IntermarketContext()
-    th = config.INTERMARKET_REGIME_THRESHOLD
     trends: dict[str, float] = {}
     for key, tfs in all_tfs.items():
         t = _trend_strength(tfs)
         if t is not None:
             trends[key] = t
-    ctx.trends = trends
+    return intermarket_from_trends(trends)
+
+
+def intermarket_from_trends(trends: dict[str, float]) -> IntermarketContext:
+    """Construye el contexto intermercado a partir de la tendencia de fondo de cada activo."""
+    ctx = IntermarketContext()
+    th = config.INTERMARKET_REGIME_THRESHOLD
+    ctx.trends = dict(trends)
 
     idx = {k: trends[k] for k in INDEX_KEYS if k in trends}
     met = {k: trends[k] for k in METAL_KEYS if k in trends}

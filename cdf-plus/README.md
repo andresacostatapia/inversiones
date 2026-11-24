@@ -93,6 +93,13 @@ cdf-plus/
 ├── indicators.py     # EMA/RSI/MACD/ATR vectoriales · filtro intermercado · scoring
 ├── risk_engine.py    # Calibrador de offset XTB · lotaje dinámico · ticket
 ├── notifier.py       # Alertas Telegram con anti-duplicados por vela
+├── backtest.py       # Prueba histórica vela a vela sin mirar el futuro
+├── brokers.py        # Bróker de papel y conector MetaTrader 5
+├── bot_engine.py     # Decisiones y protecciones del bot (lógica pura)
+├── bot.py            # Proceso del bot (papel / demo / real)
+├── views/            # Páginas de la app: Backtest y Bot MT5
+├── tests/            # 40 tests (incluye simulador de MT5)
+├── iniciar.bat / iniciar_bot.bat   # Arranque con doble clic en Windows
 ├── .streamlit/config.toml   # Tema oscuro tipo terminal
 ├── requirements.txt
 └── .env.example
@@ -175,6 +182,58 @@ sola vez (`.state/alerts_sent.json`). Las alertas se evalúan cuando la app se r
 | Activo "Cerrado/atrasado" | Mercado cerrado o feed retrasado; la señal usa la última sesión. |
 | Lotaje 0.00 | El riesgo en USD no cubre 0.01 lotes con ese stop: sube capital/% o reduce el multiplicador ATR. |
 | Precios distintos a xStation | Calibra el offset del activo. |
+
+---
+
+## 7. Backtest (página 🧪 Backtest)
+
+Antes de automatizar nada, comprueba si la estrategia habría ganado dinero en el pasado.
+
+- Recalcula el score **vela a vela con las mismas reglas** que la app y el bot (verificado por tests)
+  y **sin mirar el futuro**: la señal se evalúa al cierre de la vela de 1H y se entra en la apertura
+  de la siguiente, con SL/TP por ATR, spread y los mismos límites de posiciones que el bot.
+- Horizontes: **2 años** (yfinance; sin el bloque 15M, aproximado) o **60 días** (estrategia completa).
+  Con MetaTrader 5 instalado puedes usar el historial de tu bróker.
+- Muestra operaciones, % de acierto (y el de equilibrio), profit factor, expectativa en R, retorno,
+  drawdown máximo, resultados por activo y la sensibilidad al umbral de entrada.
+
+> **Resultado con los parámetros por defecto (2 años, yfinance, noviembre de 2026):** ~1 900
+> operaciones, acierto 33 % con ratio 1:2 (el equilibrio es 33,3 %), profit factor ≈ 1,0. Es decir,
+> **sin ventaja demostrada**. No automatices en real hasta encontrar una configuración que funcione en
+> el backtest **y** después en demo durante semanas.
+
+## 8. Bot automático con MetaTrader 5 (página 🤖 Bot MT5)
+
+`bot.py` es un proceso independiente que opera solo (la app no necesita estar abierta).
+
+| Modo | Qué hace | Requisitos |
+|---|---|---|
+| `paper` | Simula órdenes con precios reales y guarda una cuenta ficticia | Nada (usa MT5 si está instalado, si no yfinance/Twelve Data) |
+| `demo` | Envía órdenes reales a una **cuenta demo** de MT5 | Windows + terminal MT5 con sesión iniciada + botón **Algo Trading** activo |
+| `real` | Opera con dinero real | Lo anterior + `BOT_CONFIRM_REAL=SI_ENTIENDO_EL_RIESGO` en `.env` |
+
+**Arranque:** configura `BOT_MODE` en `.env` y haz doble clic en **`iniciar_bot.bat`**
+(o `python bot.py`; `python bot.py --once` hace un solo ciclo de prueba).
+
+**Cómo decide:** cada 30 s descarga velas del bróker, **descarta la vela en curso** (sin repintado),
+calcula el score y, si `|score| ≥ BOT_ENTRY_THRESHOLD`, abre a mercado con SL y TP incluidos en la orden.
+El lotaje usa las especificaciones reales del símbolo (valor del tick, lote mínimo/máximo, paso), así que
+no hace falta calibrar offsets.
+
+**Protecciones (todas configurables en `.env`):**
+- El modo `demo` **se niega a arrancar** si la cuenta conectada es real, y el `real` exige confirmación.
+- Pérdida máxima diaria (2 %): al alcanzarla no abre nada más hasta el día siguiente.
+- Máximo de posiciones (3), de índices a la vez (2, están correlacionados) y de metales (1).
+- Máximo de operaciones diarias (6) y una sola operación por activo y vela de 1H.
+- No entra con spread > 15 % del ATR, con datos atrasados ni con el mercado cerrado.
+- Solo gestiona sus propias órdenes (número mágico), nunca toca tus operaciones manuales.
+- Desde la app: **Pausar** nuevas entradas o **Parada de emergencia** (cierra todo y pausa).
+- Avisos por Telegram de cada apertura, cierre, error o bloqueo.
+
+**Símbolos:** se detectan solos (XAUUSD, US500.cash, NAS100, [DJI30], US2000m…). Si alguno no aparece,
+fíjalo con `MT5_SYMBOL_<ACTIVO>=nombre` en `.env`.
+
+**Tests:** `python -m pytest -q` (incluye un simulador de MetaTrader 5 para probar el conector sin Windows).
 
 ---
 

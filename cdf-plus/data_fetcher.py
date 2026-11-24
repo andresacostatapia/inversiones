@@ -396,3 +396,39 @@ def total_twelve_requests() -> int:
 def frame_is_usable(df: pd.DataFrame | None) -> bool:
     """True si la serie tiene datos suficientes para calcular indicadores básicos."""
     return df is not None and not df.empty and len(df) >= 30 and bool(np.isfinite(df["close"].iloc[-1]))
+
+
+def fetch_snapshot_uncached(preference: str = PROVIDER_AUTO) -> MarketSnapshot:
+    """Descarga directa sin caché de Streamlit (la usa el bot, que corre fuera de la app)."""
+    return _fetch_all(resolve_provider(preference))
+
+
+def drop_incomplete_bars(snapshot: MarketSnapshot, now: pd.Timestamp | None = None) -> MarketSnapshot:
+    """
+    Devuelve una copia del snapshot sin la vela en curso de cada temporalidad.
+
+    El bot decide solo con velas CERRADAS, para que una señal no aparezca y desaparezca
+    dentro de la misma vela ("repintado"). `now` debe estar en el mismo reloj que las velas
+    (UTC para Twelve Data/yfinance, hora del servidor para MT5).
+    """
+    now = now if now is not None else pd.Timestamp.now(tz="UTC")
+    assets: dict[str, AssetData] = {}
+    for key, data in snapshot.assets.items():
+        if not data.ok:
+            assets[key] = data
+            continue
+        frames: dict[str, pd.DataFrame] = {}
+        for tf, df in data.frames.items():
+            minutes = config.TF_MINUTES.get(tf, 0)
+            if not df.empty and df.index[-1] + pd.Timedelta(minutes=minutes) > now:
+                df = df.iloc[:-1]
+            frames[tf] = df
+        assets[key] = AssetData(
+            key=data.key, provider=data.provider, feed_symbol=data.feed_symbol, scale=data.scale,
+            frames=frames, last_price=data.last_price, raw_last_price=data.raw_last_price,
+            prev_close=data.prev_close, change_pct=data.change_pct, last_bar_time=data.last_bar_time,
+            is_stale=data.is_stale, error=data.error, warnings=list(data.warnings),
+        )
+    return MarketSnapshot(assets=assets, fetched_at=snapshot.fetched_at,
+                          provider_requested=snapshot.provider_requested,
+                          twelve_requests=snapshot.twelve_requests)
