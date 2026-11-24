@@ -1,0 +1,77 @@
+import { describe, expect, it } from 'vitest'
+import { day, money, num, pct, price, signClass } from './format'
+
+describe('formato chileno', () => {
+  it('usa punto de miles y coma decimal', () => {
+    expect(num(1234567.891, 2)).toBe('1.234.567,89')
+    expect(num(null)).toBe('—')
+    expect(num(NaN)).toBe('—')
+  })
+  it('precios CLP grandes sin decimales, USD con 2', () => {
+    expect(price(49780, 'CLP')).toBe('49.780')
+    expect(price(188.35, 'CLP')).toBe('188,35')
+    expect(price(722.5, 'USD')).toBe('722,50')
+    expect(money(722.5, 'USD')).toBe('US$ 722,50')
+    expect(money(1016, 'CLP')).toBe('$ 1.016')
+  })
+  it('porcentajes con signo', () => {
+    expect(pct(2.014, 2)).toBe('+2,01 %')
+    expect(pct(-0.45, 2)).toBe('-0,45 %')
+    expect(pct(0)).toBe('0,0 %')
+    expect(pct(12.3, 1, false)).toBe('12,3 %')
+  })
+  it('fechas y clases de signo', () => {
+    expect(day('2026-11-23')).toMatch(/23 nov\.? 2026/)
+    expect(signClass(1)).toBe('gain')
+    expect(signClass(-1)).toBe('loss')
+    expect(signClass(0)).toBe('')
+  })
+})
+
+import { clp, parseNum } from './format'
+
+describe('lectura de números escritos a mano', () => {
+  it.each([
+    ['48.500', 48500],
+    ['1.234,56', 1234.56],
+    ['1,234.56', 1234.56],
+    ['262,10', 262.1],
+    ['650.5', 650.5],
+    ['$ 1.000.000', 1000000],
+    ['abc', null],
+  ])('%s → %s', (raw, expected) => {
+    expect(parseNum(raw)).toBe(expected)
+  })
+  it('formatea CLP con signo', () => {
+    expect(clp(-1234567.4)).toBe('-$ 1.234.567')
+    expect(clp(500, true)).toBe('+$ 500')
+  })
+})
+
+import { toFixedPy } from './core/fmt'
+
+describe('redondeo idéntico a Python', () => {
+  it.each([
+    [2.5, 0, '2'], [3.5, 0, '4'], [0.125, 2, '0.12'], [0.375, 2, '0.38'],
+    [5.525, 2, '5.53'], // 5.525 en binario es 5.52500000000000035…: no es empate
+    [2.675, 2, '2.67'], // 2.67499999999999982…
+    [-0.04, 1, '-0.0'], [-2.5, 0, '-2'], [1234.5678, 1, '1234.6'],
+  ])('%s con %s decimales → %s', (v, nd, expected) => {
+    expect(toFixedPy(v, nd)).toBe(expected)
+  })
+})
+
+import { toCsv } from './components/TransactionsCard'
+
+describe('respaldo de operaciones en CSV', () => {
+  it('usa el formato de la PWA, de la más antigua a la más nueva', () => {
+    const csv = toCsv([
+      { id: 2, symbol: 'SPY', side: 'venta', quantity: 1, price: 740, currency: 'USD', date: '2026-09-01', fee: 1, fx_rate: 960, fx_source: 'manual', note: 'toma; de ganancia', total: 739 },
+      { id: 1, symbol: 'SQM-B.SN', side: 'compra', quantity: 40, price: 70000, currency: 'CLP', date: '2026-03-10', fee: 1500, fx_rate: 950, fx_source: 'historico', note: null, total: 2801500 },
+    ])
+    const lines = csv.split('\r\n')
+    expect(lines[0]).toBe('Fecha;Activo;Tipo;Cantidad;Precio;Comisión;Impuestos;Moneda;Tipo de cambio;Broker;Nota')
+    expect(lines[1]).toBe('2026-03-10;SQM-B.SN;compra;40;70000;1500;0;CLP;950;;')
+    expect(lines[2]).toBe('2026-09-01;SPY;venta;1;740;1;0;USD;960;;"toma; de ganancia"')
+  })
+})

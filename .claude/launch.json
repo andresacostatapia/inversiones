@@ -4,20 +4,54 @@
     {
       "name": "inversiones",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 5173
     },
     {
       "name": "inversiones-compilada",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "preview"],
+      "runtimeArgs": [
+        "run",
+        "preview"
+      ],
       "port": 4173
     },
     {
       "name": "cotizaciones-local",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "worker", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "worker",
+        "run",
+        "dev"
+      ],
       "port": 8787
+    },
+    {
+      "name": "analisis-api",
+      "runtimeExecutable": "analisis/.venv/bin/uvicorn",
+      "runtimeArgs": [
+        "--app-dir",
+        "analisis/backend",
+        "app.main:app",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "analisis-dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "analisis/frontend",
+        "run",
+        "dev"
+      ],
+      "port": 5173
     }
   ]
 }

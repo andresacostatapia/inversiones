@@ -1,0 +1,95 @@
+# Configuración de la app de análisis. Se puede editar a mano; se relee al reiniciar.
+# Las API keys NO van aquí: van en el archivo .env (ver .env.example).
+
+general:
+  timezone: America/Santiago        # zona horaria en que se muestran las horas
+  base_currency: CLP                # moneda de la cartera consolidada
+  database: data/analisis.db        # ruta relativa a la carpeta analisis/
+
+# Watchlist inicial. Después se edita desde la UI o la API (queda guardada en la base de datos).
+watchlist:
+  - SQM-B.SN
+  - CHILE.SN
+  - SPY
+  - VOO
+  - EEM
+  - VWO
+
+data:
+  poll_seconds: 60                  # cada cuánto se piden precios con el mercado abierto
+  closed_poll_seconds: 3600         # y con el mercado cerrado
+  history_years: 10                 # años de historia diaria para indicadores y backtest
+  stale_after_minutes: 30           # con el mercado abierto, un dato más viejo que esto se marca "desactualizado"
+  # Orden de proveedores por mercado. Se usa el primero que tenga API key y responda;
+  # si falla, se pasa al siguiente. yfinance no necesita key.
+  providers:
+    quotes:
+      CL: [yfinance]                # Bolsa de Santiago (.SN)
+      US: [finnhub, twelvedata, yfinance]
+    history:
+      CL: [yfinance]
+      US: [yfinance, twelvedata, alphavantage]
+  # Límites de consulta por proveedor (plan gratuito). Ajusta si tienes un plan pagado.
+  rate_limits:
+    yfinance:     {per_minute: 60}
+    finnhub:      {per_minute: 55}
+    twelvedata:   {per_minute: 8, per_day: 800}
+    alphavantage: {per_minute: 5, per_day: 25}
+  fx:
+    # Dólar observado (Banco Central vía mindicador.cl) y, como respaldo, USD/CLP de Yahoo.
+    sources: [mindicador, yfinance]
+
+# --- Motor de señales y backtest (fase 2) ---
+
+signals:
+  # Puntaje combinado (-100 a +100): >= buy es COMPRAR, <= sell es VENDER, en medio MANTENER.
+  thresholds: {buy: 30, sell: -30}
+  # Peso de cada estrategia en el promedio ponderado. 0 = desactivada.
+  weights:
+    trend: 1.0        # tendencia: precio vs SMA200, SMA50 vs SMA200, pendiente de la EMA20
+    rsi: 1.0          # RSI(14): sobreventa (+) / sobrecompra (-)
+    macd: 1.0         # MACD: posición frente a su señal, cruces recientes, signo
+    bollinger: 1.0    # Bandas de Bollinger (%B), filtrado por la tendencia
+  # El volumen no vota: confirma o debilita la señal combinada. 0,2 = hasta ±20 %. 0 = sin efecto.
+  volume_effect: 0.2
+
+backtest:
+  commission_pct: 0.5               # por operación (compra o venta)
+  slippage_pct: 0.0                 # deslizamiento por operación
+  default_years: 10
+
+# --- Perfil de riesgo y cartera ---
+risk_profile:
+  horizon_months: [6, 12]
+  allow_leverage: false             # la app nunca sugiere apalancamiento,
+  allow_derivatives: false          # derivados
+  allow_short: false                # ni ventas en corto
+  target_allocation: {CL: 0.30, INTL: 0.70}   # CL = Bolsa de Santiago, INTL = internacional
+  review_drawdown_pct: -20          # alerta de revisión: caída desde tu costo promedio de compra
+  sell_drawdown_pct: -25            # alerta de venta
+  monthly_contribution_clp: 500000  # aporte mensual por defecto (se puede cambiar en la UI)
+  fractional_shares: {CL: false, US: true}    # ¿tu broker permite fracciones de acción?
+
+# --- Alertas ---
+alerts:
+  signal_changes: true              # avisar cuando cambia la señal de un símbolo
+  data_error_minutes: 30            # avisar si un precio lleva este tiempo fallando con el mercado abierto
+  channels: [telegram, email]       # además de la UI; solo se usan si sus credenciales están en .env
+  notify_min_severity: warning      # info / warning / critical: desde qué gravedad se envía por Telegram o email
+
+# --- Copiloto CFD (XTB xStation) ---
+# Módulo APARTE de la cartera: aquí sí hay apalancamiento y ventas en corto, pero solo como análisis; la app nunca
+# envía órdenes. Capital, riesgo, stop/objetivo, temporalidad y alertas se cambian en la pestaña CFD.
+cfd:
+  enabled: true
+  use_twelvedata: true              # si hay TWELVEDATA_API_KEY: oro y plata al contado casi en tiempo real
+  twelvedata_timeframes: [1m, 5m, 15m]
+  twelvedata_per_minute: 6          # cupo propio (el plan gratis trae 8/min y 800/día para toda la app)
+  twelvedata_per_day: 500           # al agotarse se sigue con Yahoo (con su propio desfase de calibración)
+  yahoo_per_minute: 40
+  scan_seconds: 60                  # cada cuánto se revisan las alertas (solo si están activadas en la pestaña)
+  alert_channels: [telegram]
+  # Corrige aquí el contrato si XTB lo cambia (también se puede desde la pestaña CFD):
+  # assets:
+  #   US500: {value_per_point: 50, spread_points: 0.5, margin_pct: 5}
+  #   GOLD:  {twelvedata: null}       # null = no usar Twelve Data para este activo

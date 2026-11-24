@@ -1,0 +1,98 @@
+{
+  "_nota": "Instrumentos populares con nombres en español. Todos verificados en Yahoo Finance (noviembre 2026). kind = tipo de Yahoo; aka = palabras con que se puede buscar.",
+  "categories": [
+    {
+      "name": "ETF que replican índices",
+      "hint": "La forma de invertir en un índice.",
+      "items": [
+        { "symbol": "VOO", "name": "Vanguard S&P 500", "kind": "ETF", "aka": "s&p 500 sp500 sp 500 estados unidos indice" },
+        { "symbol": "SPY", "name": "SPDR S&P 500", "kind": "ETF", "aka": "s&p 500 sp500 sp 500 estados unidos indice" },
+        { "symbol": "IVV", "name": "iShares Core S&P 500", "kind": "ETF", "aka": "s&p 500 sp500 sp 500 estados unidos indice" },
+        { "symbol": "QQQ", "name": "Invesco QQQ (Nasdaq 100)", "kind": "ETF", "aka": "nasdaq 100 tecnologia indice" },
+        { "symbol": "DIA", "name": "SPDR Dow Jones", "kind": "ETF", "aka": "dow jones indice" },
+        { "symbol": "VT", "name": "Vanguard Total World (todo el mundo)", "kind": "ETF", "aka": "mundo global mundial indice" },
+        { "symbol": "EEM", "name": "iShares MSCI Emergentes", "kind": "ETF", "aka": "emergentes mercados emergentes" },
+        { "symbol": "VWO", "name": "Vanguard FTSE Emergentes", "kind": "ETF", "aka": "emergentes mercados emergentes" },
+        { "symbol": "ECH", "name": "iShares MSCI Chile (en USD)", "kind": "ETF", "aka": "chile ipsa acciones chilenas dolares" }
+      ]
+    },
+    {
+      "name": "Oro y materias primas",
+      "hint": "Los ETF se pueden comprar; los futuros (=F) son derivados y quedan solo para análisis.",
+      "items": [
+        { "symbol": "GLD", "name": "SPDR Gold Shares (oro)", "kind": "ETF", "aka": "oro gold" },
+        { "symbol": "IAU", "name": "iShares Gold Trust (oro)", "kind": "ETF", "aka": "oro gold" },
+        { "symbol": "SLV", "name": "iShares Silver Trust (plata)", "kind": "ETF", "aka": "plata silver" },
+        { "symbol": "CPER", "name": "United States Copper Index (cobre)", "kind": "ETF", "aka": "cobre copper" },
+        { "symbol": "USO", "name": "United States Oil Fund (petróleo)", "kind": "ETF", "aka": "petroleo oil crudo" },
+        { "symbol": "GC=F", "name": "Oro, futuro", "kind": "FUTURE", "aka": "oro gold onza" },
+        { "symbol": "SI=F", "name": "Plata, futuro", "kind": "FUTURE", "aka": "plata silver" },
+        { "symbol": "HG=F", "name": "Cobre, futuro", "kind": "FUTURE", "aka": "cobre copper libra" },
+        { "symbol": "CL=F", "name": "Petróleo WTI, futuro", "kind": "FUTURE", "aka": "petroleo oil crudo wti" }
+      ]
+    },
+    {
+      "name": "Índices (solo análisis)",
+      "hint": "Sirven de referencia; para invertir en ellos usa los ETF de arriba.",
+      "items": [
+        { "symbol": "^GSPC", "name": "S&P 500", "kind": "INDEX", "aka": "s&p 500 sp500 sp 500 estados unidos" },
+        { "symbol": "^NDX", "name": "Nasdaq 100", "kind": "INDEX", "aka": "nasdaq 100 tecnologia" },
+        { "symbol": "^IXIC", "name": "Nasdaq Composite", "kind": "INDEX", "aka": "nasdaq" },
+        { "symbol": "^DJI", "name": "Dow Jones", "kind": "INDEX", "aka": "dow jones" }
+      ]
+    },
+    {
+      "name": "Grandes empresas de EE.UU.",
+      "items": [
+        { "symbol": "NVDA", "name": "Nvidia", "kind": "EQUITY", "aka": "nvidia chips inteligencia artificial" },
+        { "symbol": "AAPL", "name": "Apple", "kind": "EQUITY", "aka": "apple iphone" },
+        { "symbol": "MSFT", "name": "Microsoft", "kind": "EQUITY", "aka": "microsoft" },
+        { "symbol": "GOOGL", "name": "Alphabet (Google)", "kind": "EQUITY", "aka": "google alphabet" },
+        { "symbol": "AMZN", "name": "Amazon", "kind": "EQUITY", "aka": "amazon" },
+        { "symbol": "META", "name": "Meta (Facebook)", "kind": "EQUITY", "aka": "meta facebook instagram" },
+        { "symbol": "TSLA", "name": "Tesla", "kind": "EQUITY", "aka": "tesla autos electricos" },
+        { "symbol": "BRK-B", "name": "Berkshire Hathaway", "kind": "EQUITY", "aka": "berkshire buffett" },
+        { "symbol": "JPM", "name": "JPMorgan Chase", "kind": "EQUITY", "aka": "jpmorgan banco" }
+      ]
+    },
+    {
+      "name": "Chile (Bolsa de Santiago)",
+      "items": [
+        { "symbol": "SQM-B.SN", "name": "SQM serie B", "kind": "EQUITY", "aka": "sqm litio soquimich" },
+        { "symbol": "CHILE.SN", "name": "Banco de Chile", "kind": "EQUITY", "aka": "banco de chile" },
+        { "symbol": "BSANTANDER.SN", "name": "Banco Santander Chile", "kind": "EQUITY", "aka": "santander banco" },
+        { "symbol": "BCI.SN", "name": "Banco BCI", "kind": "EQUITY", "aka": "bci banco credito inversiones" },
+        { "symbol": "ITAUCL.SN", "name": "Banco Itaú Chile", "kind": "EQUITY", "aka": "itau banco" },
+        { "symbol": "FALABELLA.SN", "name": "Falabella", "kind": "EQUITY", "aka": "falabella retail" },
+        { "symbol": "CENCOSUD.SN", "name": "Cencosud", "kind": "EQUITY", "aka": "cencosud jumbo retail" },
+        { "symbol": "COPEC.SN", "name": "Empresas Copec", "kind": "EQUITY", "aka": "copec combustible forestal" },
+        { "symbol": "CMPC.SN", "name": "CMPC", "kind": "EQUITY", "aka": "cmpc celulosa papel forestal" },
+        { "symbol": "ENELAM.SN", "name": "Enel Américas", "kind": "EQUITY", "aka": "enel americas electricidad" },
+        { "symbol": "ENELCHILE.SN", "name": "Enel Chile", "kind": "EQUITY", "aka": "enel chile electricidad" },
+        { "symbol": "COLBUN.SN", "name": "Colbún", "kind": "EQUITY", "aka": "colbun electricidad energia" },
+        { "symbol": "LTM.SN", "name": "LATAM Airlines", "kind": "EQUITY", "aka": "latam aerolinea" },
+        { "symbol": "CCU.SN", "name": "CCU", "kind": "EQUITY", "aka": "ccu cerveza bebidas" },
+        { "symbol": "ANDINA-B.SN", "name": "Embotelladora Andina B", "kind": "EQUITY", "aka": "andina coca cola bebidas" },
+        { "symbol": "CONCHATORO.SN", "name": "Concha y Toro", "kind": "EQUITY", "aka": "concha y toro vino" },
+        { "symbol": "VAPORES.SN", "name": "Vapores", "kind": "EQUITY", "aka": "vapores naviera hapag" },
+        { "symbol": "PARAUCO.SN", "name": "Parque Arauco", "kind": "EQUITY", "aka": "parque arauco malls" },
+        { "symbol": "MALLPLAZA.SN", "name": "Mallplaza", "kind": "EQUITY", "aka": "mall plaza malls" },
+        { "symbol": "ENTEL.SN", "name": "Entel", "kind": "EQUITY", "aka": "entel telefonia" },
+        { "symbol": "CAP.SN", "name": "CAP", "kind": "EQUITY", "aka": "cap acero hierro mineria" },
+        { "symbol": "AGUAS-A.SN", "name": "Aguas Andinas A", "kind": "EQUITY", "aka": "aguas andinas agua" },
+        { "symbol": "QUINENCO.SN", "name": "Quiñenco", "kind": "EQUITY", "aka": "quinenco luksic" },
+        { "symbol": "SMU.SN", "name": "SMU (Unimarc)", "kind": "EQUITY", "aka": "smu unimarc supermercados" },
+        { "symbol": "RIPLEY.SN", "name": "Ripley", "kind": "EQUITY", "aka": "ripley retail" }
+      ]
+    },
+    {
+      "name": "Otras bolsas y cripto",
+      "items": [
+        { "symbol": "SMSN.IL", "name": "Samsung Electronics (Londres, en USD)", "kind": "EQUITY", "currency": "USD", "aka": "samsung corea" },
+        { "symbol": "005930.KS", "name": "Samsung Electronics (Corea, en KRW)", "kind": "EQUITY", "currency": "KRW", "aka": "samsung corea" },
+        { "symbol": "BTC-USD", "name": "Bitcoin", "kind": "CRYPTOCURRENCY", "aka": "bitcoin btc cripto criptomoneda" },
+        { "symbol": "ETH-USD", "name": "Ethereum", "kind": "CRYPTOCURRENCY", "aka": "ethereum eth cripto criptomoneda" }
+      ]
+    }
+  ]
+}

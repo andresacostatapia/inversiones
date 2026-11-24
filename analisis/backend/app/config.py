@@ -1,0 +1,145 @@
+"""Configuración: config.yaml (perfil, watchlist, proveedores) + .env (API keys)."""
+
+from __future__ import annotations
+
+import os
+from functools import lru_cache
+from pathlib import Path
+
+import yaml
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from .cfd.assets import CfdConfig
+
+# analisis/  (backend/app/config.py -> parents[2])
+ROOT_DIR = Path(__file__).resolve().parents[2]
+
+
+def app_home() -> Path:
+    """Carpeta con config.yaml, .env y data/. Por defecto analisis/; la app de escritorio la mueve a la carpeta del
+    usuario con la variable ANALISIS_HOME (así los datos sobreviven a una actualización del programa)."""
+    return Path(os.environ.get("ANALISIS_HOME") or ROOT_DIR)
+
+
+class Secrets(BaseSettings):
+    """API keys y credenciales. Vienen del entorno o de analisis/.env; nunca de config.yaml."""
+
+    model_config = SettingsConfigDict(env_file_encoding="utf-8", extra="ignore")
+
+    finnhub_api_key: str = ""
+    twelvedata_api_key: str = ""
+    alphavantage_api_key: str = ""
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    alert_email_to: str = ""
+
+
+class RateLimit(BaseModel):
+    per_minute: int | None = None
+    per_day: int | None = None
+
+
+class ProviderOrder(BaseModel):
+    quotes: dict[str, list[str]] = Field(default_factory=lambda: {"CL": ["yfinance"], "US": ["yfinance"]})
+    history: dict[str, list[str]] = Field(default_factory=lambda: {"CL": ["yfinance"], "US": ["yfinance"]})
+
+
+class FxConfig(BaseModel):
+    sources: list[str] = Field(default_factory=lambda: ["mindicador", "yfinance"])
+
+
+class DataConfig(BaseModel):
+    poll_seconds: int = 60
+    closed_poll_seconds: int = 3600
+    history_years: int = 10
+    stale_after_minutes: int = 30
+    providers: ProviderOrder = Field(default_factory=ProviderOrder)
+    rate_limits: dict[str, RateLimit] = Field(default_factory=dict)
+    fx: FxConfig = Field(default_factory=FxConfig)
+
+
+class SignalThresholds(BaseModel):
+    buy: float = 30
+    sell: float = -30
+
+
+class SignalsConfig(BaseModel):
+    thresholds: SignalThresholds = Field(default_factory=SignalThresholds)
+    # Peso de cada estrategia en el promedio. 0 = desactivada.
+    weights: dict[str, float] = Field(
+        default_factory=lambda: {"trend": 1.0, "rsi": 1.0, "macd": 1.0, "bollinger": 1.0}
+    )
+    # Cuánto amplifica (o atenúa) el volumen relativo la señal combinada: 0,2 = ±20 %. 0 = sin efecto.
+    volume_effect: float = 0.2
+
+
+class BacktestConfig(BaseModel):
+    commission_pct: float = 0.5   # por operación (compra o venta)
+    slippage_pct: float = 0.0     # deslizamiento por operación
+    default_years: int = 10
+
+
+class RiskProfile(BaseModel):
+    horizon_months: list[int] = Field(default_factory=lambda: [6, 12])
+    allow_leverage: bool = False
+    allow_derivatives: bool = False
+    allow_short: bool = False
+    # Distribución objetivo por mercado: CL = Bolsa de Santiago, INTL = el resto.
+    target_allocation: dict[str, float] = Field(default_factory=lambda: {"CL": 0.30, "INTL": 0.70})
+    review_drawdown_pct: float = -20   # alerta de revisión: caída desde el costo promedio de compra
+    sell_drawdown_pct: float = -25     # alerta de venta
+    monthly_contribution_clp: float = 0
+    fractional_shares: dict[str, bool] = Field(default_factory=lambda: {"CL": False, "US": True})
+
+
+class AlertsConfig(BaseModel):
+    signal_changes: bool = True        # avisar cuando cambia la señal de un símbolo de la watchlist
+    data_error_minutes: int = 30       # con el mercado abierto, avisar si un precio lleva este tiempo fallando
+    channels: list[str] = Field(default_factory=lambda: ["telegram", "email"])  # además de la UI, si hay credenciales
+    notify_min_severity: str = "warning"  # info / warning / critical: desde qué gravedad se envía afuera
+
+
+class GeneralConfig(BaseModel):
+    timezone: str = "America/Santiago"
+    base_currency: str = "CLP"
+    database: str = "data/analisis.db"
+
+
+class AppConfig(BaseModel):
+    general: GeneralConfig = Field(default_factory=GeneralConfig)
+    watchlist: list[str] = Field(default_factory=list)
+    data: DataConfig = Field(default_factory=DataConfig)
+    signals: SignalsConfig = Field(default_factory=SignalsConfig)
+    backtest: BacktestConfig = Field(default_factory=BacktestConfig)
+    risk_profile: RiskProfile = Field(default_factory=RiskProfile)
+    alerts: AlertsConfig = Field(default_factory=AlertsConfig)
+    cfd: CfdConfig = Field(default_factory=CfdConfig)  # copiloto CFD (módulo aparte de la cartera)
+
+    @property
+    def database_path(self) -> Path:
+        p = Path(self.general.database)
+        return p if p.is_absolute() else app_home() / p
+
+
+def load_config(path: Path | str | None = None) -> AppConfig:
+    path = Path(path or os.environ.get("ANALISIS_CONFIG") or app_home() / "config.yaml")
+    if not path.exists():
+        return AppConfig()
+    with open(path, encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    return AppConfig.model_validate(raw)
+
+
+@lru_cache
+def get_config() -> AppConfig:
+    return load_config()
+
+
+@lru_cache
+def get_secrets() -> Secrets:
+    return Secrets(_env_file=app_home() / ".env")
